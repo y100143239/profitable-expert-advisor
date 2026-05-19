@@ -58,24 +58,42 @@ double g_Pos_ST_GER40;
 double g_RSS_LotSize;
 
 input group "=== Global Portfolio Risk Manager (iter9) ==="
-input bool   GRM_Enable = false;              // Iter9: disabled by default; blocks new entries only when enabled.
-input int    GRM_MaxConcurrentPositions = 0;  // 0 = disabled. Counts known V4 magic numbers only.
-input int    GRM_MaxConcurrentSymbols = 0;    // 0 = disabled. Unique symbols with known V4 positions.
-input int    GRM_MaxSameSymbolPositions = 0;  // 0 = disabled. Useful for XAUUSD cluster crowding.
-input int    GRM_MaxSameSymbolSameSidePositions = 0; // 0 = disabled. Caps same symbol and direction only.
-input double GRM_MaxMarginLoadPct = 0.0;      // 0 = disabled. margin / equity * 100.
-input double GRM_DailyProfitTargetUSD = 0.0;  // 0 = disabled. Blocks new entries after realized daily profit reaches target.
-input double GRM_DailyLossLimitUSD = 0.0;     // 0 = disabled. Blocks new entries after realized daily loss reaches limit.
-input double GRM_DailyProfitTargetFreeMarginPct = 0.0; // 0 = disabled. Threshold = free margin * pct / 100.
-input double GRM_DailyLossLimitFreeMarginPct = 0.0;    // 0 = disabled. Threshold = free margin * pct / 100.
-input double GRM_MonthlyProfitTargetUSD = 0.0; // 0 = disabled. Blocks new entries after realized monthly profit reaches target.
-input double GRM_MonthlyLossLimitUSD = 0.0;    // 0 = disabled. Blocks new entries after realized monthly loss reaches limit.
-input double GRM_MonthlyProfitTargetFreeMarginPct = 0.0; // 0 = disabled. Threshold = free margin * pct / 100.
-input double GRM_MonthlyLossLimitFreeMarginPct = 0.0;    // 0 = disabled. Threshold = free margin * pct / 100.
-input string GRM_BlockEntryMonths = "";       // Comma-separated months 1-12. Empty = disabled.
-input string GRM_BlockEntrySymbolContains = ""; // Comma-separated symbol fragments. Empty = all symbols in blocked months.
-input string GRM_BlockLongSymbolContains = "";  // Comma-separated symbol fragments. Empty = disabled.
-input string GRM_BlockShortSymbolContains = ""; // Comma-separated symbol fragments. Empty = disabled.
+// Iter10E9 verified default: enables causal portfolio-level risk controls.
+input bool   GRM_Enable = true;
+// 0 = disabled. Counts known V4 magic numbers only.
+input int    GRM_MaxConcurrentPositions = 0;
+// 0 = disabled. Unique symbols with known V4 positions.
+input int    GRM_MaxConcurrentSymbols = 0;
+// 0 = disabled. Useful for XAUUSD cluster crowding.
+input int    GRM_MaxSameSymbolPositions = 0;
+// 0 = disabled. Caps same symbol and direction only.
+input int    GRM_MaxSameSymbolSameSidePositions = 0;
+// 0 = disabled. margin / equity * 100.
+input double GRM_MaxMarginLoadPct = 0.0;
+// 0 = disabled. Blocks new entries after realized daily profit reaches target.
+input double GRM_DailyProfitTargetUSD = 0.0;
+// 0 = disabled. Blocks new entries after realized daily loss reaches limit.
+input double GRM_DailyLossLimitUSD = 0.0;
+// 0 = disabled. Threshold = free margin * pct / 100.
+input double GRM_DailyProfitTargetFreeMarginPct = 0.0;
+// 0 = disabled. Threshold = free margin * pct / 100.
+input double GRM_DailyLossLimitFreeMarginPct = 0.0;
+// 0 = disabled. Blocks new entries after realized monthly profit reaches target.
+input double GRM_MonthlyProfitTargetUSD = 0.0;
+// 0 = disabled. Blocks new entries after realized monthly loss reaches limit.
+input double GRM_MonthlyLossLimitUSD = 0.0;
+// 0 = disabled. Threshold = free margin * pct / 100.
+input double GRM_MonthlyProfitTargetFreeMarginPct = 0.0;
+// 0 = disabled. Threshold = free margin * pct / 100.
+input double GRM_MonthlyLossLimitFreeMarginPct = 0.0;
+// Comma-separated months 1-12. Empty = disabled.
+input string GRM_BlockEntryMonths = "";
+// Comma-separated symbol fragments. Empty = all symbols in blocked months.
+input string GRM_BlockEntrySymbolContains = "";
+// Comma-separated symbol fragments. Empty = disabled.
+input string GRM_BlockLongSymbolContains = "";
+// Comma-separated symbol fragments. Empty = disabled.
+input string GRM_BlockShortSymbolContains = "";
 input bool   GRM_XAUStressRegimeEnable = false;
 input string GRM_XAUStressSymbolContains = "XAUUSD";
 input ENUM_TIMEFRAMES GRM_XAUStressTimeframe = PERIOD_D1;
@@ -111,7 +129,7 @@ input int    GRM_PortfolioConsecutiveLossCount = 4;
 input int    GRM_PortfolioConsecutiveLossLookbackDays = 30;
 input int    GRM_PortfolioLossCooldownBars = 6;
 input ENUM_TIMEFRAMES GRM_PortfolioLossCooldownTimeframe = PERIOD_H1;
-input bool   GRM_PortfolioConsecutiveLossLotThrottleEnable = false;
+input bool   GRM_PortfolioConsecutiveLossLotThrottleEnable = true;
 input double GRM_PortfolioConsecutiveLossLotThrottleFactor = 0.80;
 input bool   GRM_PortfolioDailyLossLotThrottleEnable = false;
 input double GRM_PortfolioDailyLossLotThrottleUSD = 0.0;
@@ -999,8 +1017,10 @@ input double ORCH_MaxBalanceScale = 10.0;
 input group "=== DarvasBox Strategy ==="
 input string DB_Symbol = "XAUUSD";
 input int    DB_BoxPeriod = 165;
-input double DB_BoxDeviation = 30000;  // Increased to allow larger ranges (was 25140)
-input int    DB_VolumeThreshold = 0;  // Set to 0 to disable volume threshold check. Volume data from indicator used instead.
+// Increased to allow larger ranges (was 25140)
+input double DB_BoxDeviation = 30000;
+// Set to 0 to disable volume threshold check. Volume data from indicator used instead.
+input int    DB_VolumeThreshold = 0;
 input double DB_StopLoss = 1665;
 input double DB_TakeProfit = 3685;
 input bool   DB_EnableLogging = false;
@@ -1071,11 +1091,16 @@ input double RC_exitSellRSI = 10;
 input double RC_TrailingStop = 295;
 input double RC_emaDistanceThreshold = 165;
 input bool   RC_UseTrendStrengthFilter = true;
-input double RC_SellHardSL_Points = 2000; // V4-iter4: tighter cap on RC SELL (2000 pts = $20 on XAU). 0 = disabled.
-input bool   RC_VetoSellAgainstHTF = true; // V4-iter7-D: skip RC SELL entry when HTF (D1 EMA200) shows uptrend (slope>0 AND price>EMA).
-input ENUM_TIMEFRAMES RC_HTF_TimeFrame = PERIOD_D1; // V4-iter7-D: timeframe for HTF veto.
-input int    RC_HTF_EMAPeriod = 200;       // V4-iter7-D: EMA length on HTF for trend bias.
-input int    RC_HTF_SlopeBars  = 5;        // V4-iter7-D: bars to measure HTF EMA slope.
+// V4-iter4: tighter cap on RC SELL (2000 pts = $20 on XAU). 0 = disabled.
+input double RC_SellHardSL_Points = 2000;
+// V4-iter7-D: skip RC SELL entry when HTF (D1 EMA200) shows uptrend (slope>0 AND price>EMA).
+input bool   RC_VetoSellAgainstHTF = true;
+// V4-iter7-D: timeframe for HTF veto.
+input ENUM_TIMEFRAMES RC_HTF_TimeFrame = PERIOD_D1;
+// V4-iter7-D: EMA length on HTF for trend bias.
+input int    RC_HTF_EMAPeriod = 200;
+// V4-iter7-D: bars to measure HTF EMA slope.
+input int    RC_HTF_SlopeBars  = 5;
 input int    RC_tradingHourOneBegin = 24;
 input int    RC_tradingHourOneEnd = 22;
 input int    RC_tradingHourTwoBegin = 6;
@@ -1158,7 +1183,8 @@ input int    RM_InpEMADistancePeriod = 26;
 //|   4. Use the exact symbol name shown                              |
 //+------------------------------------------------------------------+
 input group "=== RSI Scalping APPL (AAPL) - Pepperstone US ==="
-input string RS_APPL_Symbol = "AAPL.NAS";  // Pepperstone / match tester set (also try AAPL.US)
+// Pepperstone / match tester set (also try AAPL.US)
+input string RS_APPL_Symbol = "AAPL.NAS";
 input ENUM_TIMEFRAMES RS_APPL_TimeFrame = PERIOD_M10;
 input int    RS_APPL_RSI_Period = 14;
 input ENUM_APPLIED_PRICE RS_APPL_RSI_Applied_Price = PRICE_CLOSE;
@@ -1172,7 +1198,8 @@ input int    RS_APPL_MagicNumber = 20001;
 input int    RS_APPL_Slippage = 3;
 
 input group "=== RSI Scalping BTCUSD ==="
-input string RS_BTCUSD_Symbol = "BTCUSD";  // Pepperstone may use: "BTCUSD", "BTC/USD", or "BTCUSD.c"
+// Pepperstone may use: "BTCUSD", "BTC/USD", or "BTCUSD.c"
+input string RS_BTCUSD_Symbol = "BTCUSD";
 input ENUM_TIMEFRAMES RS_BTCUSD_TimeFrame = PERIOD_H1;
 input int    RS_BTCUSD_RSI_Period = 14;
 input ENUM_APPLIED_PRICE RS_BTCUSD_RSI_Applied_Price = PRICE_CLOSE;
@@ -1186,7 +1213,8 @@ input int    RS_BTCUSD_MagicNumber = 123459123;
 input int    RS_BTCUSD_Slippage = 3;
 
 input group "=== RSI Scalping NVDA - Pepperstone US ==="
-input string RS_NVDA_Symbol = "NVDA.NAS";  // Pepperstone / match tester set (also try NVDA.US)
+// Pepperstone / match tester set (also try NVDA.US)
+input string RS_NVDA_Symbol = "NVDA.NAS";
 input ENUM_TIMEFRAMES RS_NVDA_TimeFrame = PERIOD_M15;
 input int    RS_NVDA_RSI_Period = 8;
 input ENUM_APPLIED_PRICE RS_NVDA_RSI_Applied_Price = PRICE_CLOSE;
@@ -1200,7 +1228,8 @@ input int    RS_NVDA_MagicNumber = 20003;
 input int    RS_NVDA_Slippage = 3;
 
 input group "=== RSI Scalping TSLA - Pepperstone US ==="
-input string RS_TSLA_Symbol = "TSLA.NAS";  // Pepperstone / match tester set (also try TSLA.US)
+// Pepperstone / match tester set (also try TSLA.US)
+input string RS_TSLA_Symbol = "TSLA.NAS";
 input ENUM_TIMEFRAMES RS_TSLA_TimeFrame = PERIOD_H1;
 input int    RS_TSLA_RSI_Period = 14;
 input ENUM_APPLIED_PRICE RS_TSLA_RSI_Applied_Price = PRICE_CLOSE;
@@ -1308,10 +1337,12 @@ input int    RRA_AUDUSD_MagicNumber = 30002;
 input int    RRA_AUDUSD_Slippage = 3;
 
 input group "=== RSI Reversal Asian HTF Veto (iter8-E2) ==="
-input bool             RRA_VetoSellAgainstHTF = true;       // V4-iter8-E2: block RRA SELL when D1 EMA200 trending UP.
+// V4-iter8-E2: block RRA SELL when D1 EMA200 trending UP.
+input bool             RRA_VetoSellAgainstHTF = true;
 input ENUM_TIMEFRAMES  RRA_HTF_TimeFrame      = PERIOD_D1;
 input int              RRA_HTF_EMAPeriod      = 200;
-input int              RRA_HTF_SlopeBars      = 5;          // require EMA(now) > EMA(N bars ago) AND price > EMA to veto SELL.
+// require EMA(now) > EMA(N bars ago) AND price > EMA to veto SELL.
+input int              RRA_HTF_SlopeBars      = 5;
 
 input group "=== SuperEMA (EMA + CCI + MACD) ==="
 input string              SE_Symbol = "XAUUSD";
@@ -1371,11 +1402,16 @@ input int                 RCO_Slippage = 10;
 input int                 RCO_MaxSpreadPoints = 28;
 
 input group "=== SimpleTrendline BTCUSD ==="
-input ulong  ST_MaxHoldMagic   = 26042503; // V4-iter5: enforce time-based exit only for this magic (ST_XAU). 0 = disabled / any.
-input ulong  ST_MaxHoldMagic2  = 26042502; // V4-iter7-C: also apply MaxHold to ST_DE40. 0 = none.
-input int    ST_MaxHoldHours   = 72;       // V4-iter5: close stuck positions after N hours (0 = disabled). XAU ST avg hold ~92k-180k min observed.
-input ulong  ST_MinHoldMagic   = 0;        // V4-iter8-H REVERTED: H-4 FAIL all 3 windows; H-6 IS+RECENT hung 45m/5h. 0 = disabled.
-input int    ST_MinHoldHours   = 0;        // V4-iter8-H REVERTED: 0 = disabled.
+// V4-iter5: enforce time-based exit only for this magic (ST_XAU). 0 = disabled / any.
+input ulong  ST_MaxHoldMagic   = 26042503;
+// V4-iter7-C: also apply MaxHold to ST_DE40. 0 = none.
+input ulong  ST_MaxHoldMagic2  = 26042502;
+// V4-iter5: close stuck positions after N hours (0 = disabled). XAU ST avg hold ~92k-180k min observed.
+input int    ST_MaxHoldHours   = 72;
+// V4-iter8-H REVERTED: H-4 FAIL all 3 windows; H-6 IS+RECENT hung 45m/5h. 0 = disabled.
+input ulong  ST_MinHoldMagic   = 0;
+// V4-iter8-H REVERTED: 0 = disabled.
+input int    ST_MinHoldHours   = 0;
 input double ST_MinSlopePointsPerBar = 0.0;
 input bool   ST_EarlyFailureExitEnable = false;
 input int    ST_EarlyFailureMinHoldBars = 1;
