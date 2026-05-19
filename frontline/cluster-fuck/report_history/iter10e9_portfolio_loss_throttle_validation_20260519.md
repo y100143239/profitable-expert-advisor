@@ -94,6 +94,75 @@ Replay2 matched the first weak2023 run exactly:
 - Total Trades: 1821
 - Total Deals: 3642
 
+## Current-default source replay after input-comment/default promotion
+
+Purpose: verify that moving `input` parameter comments from line tails to preceding lines, and promoting the CL4/F0.80 settings to source defaults, did not change strategy logic.
+
+Current source: `frontline/cluster-fuck/_iter10e9_loss_cooldown_20260519`, commit lineage after `5be37f5`.
+
+Compile check: current `main.mq5` compiled locally with MetaEditor: `Result: 0 errors, 0 warnings`.
+
+Source input check:
+
+```text
+No input trailing comments remain.
+GRM_Enable=true
+GRM_PortfolioConsecutiveLossCount=4
+GRM_PortfolioConsecutiveLossLotThrottleEnable=true
+GRM_PortfolioConsecutiveLossLotThrottleFactor=0.80
+```
+
+Replay command shape: `frontline/run_v4_archived_repro.py --source-dir frontline/cluster-fuck/_iter10e9_loss_cooldown_20260519 --compile-source`, with no extra `--set` overrides. This validates the source defaults themselves.
+
+| Window | Current-default report | Original Net | Current Net | Delta | Original Equity DD | Current Equity DD | PF | Trades | Win rate | Strategy-field diffs |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| weak2023 | `v4_archived_e9_current_defaults_repro_weak2023_20230101to20231130_20260519_212156` | 527.85 | 527.14 | -0.71 | 637.20 (18.55%) | 637.68 (18.57%) | 1.15 | 1821 | 39.59% | 0 / 3642 |
+| recent | `v4_archived_e9_current_defaults_repro_recent_20260401to20260512_20260519_212315` | 188.96 | 188.96 | 0.00 | 255.30 (7.66%) | 255.31 (7.66%) | 1.29 | 162 | 46.30% | 0 / 324 |
+| full_2023_2026 | `v4_archived_e9_current_defaults_repro_full_2023_2026_20230101to20260512_20260519_213938` | 17523.84 | 17515.53 | -8.31 | 2655.50 (12.08%) | 2657.47 (12.10%) | 1.38 | 8430 | 42.08% | 200 / 16860 |
+
+Interpretation: weak2023 and recent are strategy-stream exact. The full-window differences match the earlier committed-code reproduction pattern: 100 trade pairs / 200 rows differ only at dynamic stock lot boundary levels after long-run balance/cost drift, while trade count, win rate, PF, and overall drawdown structure remain aligned. No signal/timing logic change is indicated by the input-comment/default promotion.
+
+## Half-year stability windows after current-default promotion
+
+Scorecard CSV: `frontline/cluster-fuck/report_history/e9_current_defaults_semester_scorecard_20260519.csv`
+
+Family PnL CSV: `frontline/cluster-fuck/report_history/e9_current_defaults_semester_family_pnl_20260519.csv`
+
+All windows were run from current E9 defaults with `--compile-source` and no extra `--set` overrides.
+
+| Window | Report | Net Profit | Balance DD Max | Equity DD Max | PF | Recovery | Trades | Win rate | Expected Payoff | Profitable day % | Max loss-day streak |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2023H1 | `v4_archived_e9_current_defaults_semester_2023H1_20230101to20230630_20260519_214246` | 127.90 | 265.58 (7.84%) | 308.55 (8.98%) | 1.06 | 0.41 | 963 | 39.67% | 0.13 | 42.00% | 5 |
+| 2023H2 | `v4_archived_e9_current_defaults_semester_2023H2_20230701to20231231_20260519_214451` | -124.61 | 330.59 (11.02%) | 325.49 (10.80%) | 0.93 | -0.38 | 992 | 38.61% | -0.13 | 34.78% | 7 |
+| 2024H1 | `v4_archived_e9_current_defaults_semester_2024H1_20240101to20240630_20260519_214722` | 912.45 | 198.66 (5.44%) | 407.24 (10.14%) | 1.42 | 2.24 | 1125 | 41.60% | 0.81 | 43.20% | 9 |
+| 2024H2 | `v4_archived_e9_current_defaults_semester_2024H2_20240701to20241231_20260519_215039` | 390.86 | 383.56 (10.69%) | 554.26 (14.73%) | 1.19 | 0.71 | 957 | 41.17% | 0.41 | 51.06% | 7 |
+| 2025H1 | `v4_archived_e9_current_defaults_semester_2025H1_20250101to20250630_20260519_215531` | 902.05 | 383.02 (9.77%) | 386.56 (9.18%) | 1.20 | 2.33 | 1159 | 40.98% | 0.78 | 49.51% | 5 |
+| 2025H2 | `v4_archived_e9_current_defaults_semester_2025H2_20250701to20251231_20260519_215907` | 3513.78 | 445.22 (7.82%) | 563.29 (8.61%) | 1.57 | 6.24 | 1504 | 43.88% | 2.34 | 47.69% | 6 |
+| 2026H1_partial | `v4_archived_e9_current_defaults_semester_2026H1_partial_20260101to20260512_20260519_220218` | 1675.52 | 461.01 (10.26%) | 620.47 (12.53%) | 1.30 | 2.70 | 936 | 45.94% | 1.79 | 52.05% | 8 |
+
+Stability summary:
+
+- Positive windows: 6 / 7.
+- Negative windows: 1 / 7, only 2023H2 at -124.61.
+- Sum of independent half-year nets: 7397.95. This is not expected to equal the full-window net because each half-year restarts the account balance and therefore changes dynamic lot scaling.
+- Median half-year net: 902.05.
+- PF range: 0.93 to 1.57.
+- Trades range: 936 to 1504.
+- Max loss-day streak across half-year windows: 9 days.
+- Worst day across windows: -284.57 in 2026H1_partial; best day: 899.59 in 2025H2.
+
+Family contribution across half-year windows:
+
+| Family | Net | Deals | Interpretation |
+| --- | ---: | ---: | --- |
+| XAU | 5748.02 | 9590 | Primary profit engine; positive in 6 of 7 half-year windows, slightly negative in 2023H2. |
+| Stocks | 1082.93 | 1766 | Secondary contributor; weak in 2023H2, strong in 2024H1/2025/2026. |
+| BTC | 785.76 | 578 | Concentrated positive contribution, mainly 2025H2. |
+| FX | -52.33 | 332 | Small drag; low impact on portfolio total. |
+| Index | -166.43 | 3006 | Persistent mild drag, offset by XAU/Stocks/BTC. |
+
+Stability interpretation: E9 is not uniformly profitable in every half-year slice, but it is stable enough for the current promotion standard. The only losing half-year is shallow relative to later positive windows and to full-window profit. The main residual robustness risk is contribution concentration: XAU remains the dominant profit engine, and Index/FX are mild long-run drags. This supports keeping E9 as the current verified baseline while using future work for strategy/family-level signal quality improvements rather than adding date/symbol-specific hard blocks.
+
 ## Weak2023 throttle matrix
 
 Completed causal portfolio-level variants:
