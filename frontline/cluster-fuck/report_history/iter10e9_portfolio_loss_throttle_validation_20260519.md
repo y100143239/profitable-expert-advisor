@@ -42,6 +42,29 @@ Full report recovery note: first local full `Report.html` was truncated by SCP r
 
 ## Reference comparisons
 
+## V2 baseline to current E9: main optimizations
+
+V2 reference source: `frontline/cluster-fuck/_united-V2`. V2 was the original static multi-strategy portfolio: each strategy ran on fixed symbols/magic numbers, with limited broker-symbol portability and without the later portfolio-level causal risk governor. The current promoted version is E9 on the V4 code line: `frontline/cluster-fuck/_iter10e9_loss_cooldown_20260519`, committed as `aee7d40`.
+
+Main optimization path from V2 to the current verified E9 baseline:
+
+1. Broker-symbol robustness and reproducible deployment: V4 introduced `BrokerSymbolMapper.mqh` and normalized stock symbols such as `AAPL.NAS`, `NVDA.NAS`, and `TSLA.NAS`, reducing the V2 dependency on exact local broker symbol naming. The V4 deployment/replay scripts also produce prefixed report directories, making reproductions traceable and avoiding shared `report_history` collisions.
+2. Strategy portfolio upgrade: the portfolio moved from V2's static strategy bundle toward the V4 multi-asset configuration with tuned defaults, added risk-aware orchestration, and validated strategy toggles. The early V4 baseline already lifted full-window net profit materially versus the old V2 comparison report while cutting total trade count.
+3. Causal portfolio-level risk governor: E9 promotes only the non-overfit setting `GRM_PortfolioConsecutiveLossLotThrottleEnable=true`, `GRM_PortfolioConsecutiveLossCount=4`, `GRM_PortfolioConsecutiveLossLotThrottleFactor=0.80`. This reduces size after confirmed portfolio loss streaks using closed historical deals only. It deliberately avoids hardcoded dates, year/month filters, symbol-specific blocks, direction-specific blocks, and magic-specific promotion rules.
+4. Validation discipline: candidates are gated across weak2023, h2_2024, recent, is_2025, and full_2023_2026. Rejected experiments remain documented as default-off diagnostics rather than silently becoming active rules.
+
+Metric context: the old V2 comparison report (`ComparisonReport_20260510_192432.md`) used a slightly different end date and reports a single max-drawdown field, so it is directional rather than byte-for-byte comparable with the E9 MT5 `summary.csv` fields. Still, it captures the scale of the improvement.
+
+| Window / source | Net Profit | Drawdown field | PF | Trades | Win rate | Interpretation |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| V2 static baseline, full 2023.01.01-2026.05.10 | 2747.85 | MaxDD 882.83 | n/a | 16736 | 22.47% | Original static portfolio had many low-quality trades and low win rate. |
+| Early V4 baseline, full 2023.01.01-2026.05.12 | 11123.28 | Equity DD 2439.61 (18.71%) | 1.21 | 12332 | 41.83% | V4 strategy/symbol/orchestration upgrade improved profit and win rate before E9 risk throttle. |
+| Current E9 CL4/F0.80, full 2023.01.01-2026.05.12 | 17523.84 | Equity DD 2655.50 (12.08%) | 1.38 | 8430 | 42.08% | Current verified baseline keeps higher profit quality with fewer trades and lower percentage equity DD than early V4. |
+| V2 static baseline, recent 2026.04.01-2026.05.10 | -277.32 | MaxDD 647.76 | n/a | 704 | 21.16% | V2 struggled in the recent stress slice. |
+| Current E9 CL4/F0.80, recent 2026.04.01-2026.05.12 | 188.96 | Equity DD 255.30 (7.66%) | 1.29 | 162 | 46.30% | E9 turns the recent slice positive while cutting churn and drawdown. |
+
+Bottom line: the main improvement over V2 is not a single entry tweak. It is the combination of broker-symbol normalization, V4 portfolio/orchestration upgrades, and a conservative causal portfolio loss-streak lot throttle. The verified E9 result preserves long-run profitability, improves recent-window survivability, and raises trade quality while staying within the anti-overfit promotion rule.
+
 Full window vs Iter10E1 deep/full reference:
 
 | Candidate | Net Profit | Balance DD Max | Equity DD Max | PF | Recovery | Trades |
