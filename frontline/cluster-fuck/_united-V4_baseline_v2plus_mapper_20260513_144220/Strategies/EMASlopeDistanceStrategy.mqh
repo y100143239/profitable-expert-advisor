@@ -117,11 +117,11 @@ void BerechneEMA()
    
    if(copied <= 0)
    {
-      Print("TRACE: Fehler beim Kopieren der EMA Werte - Copied: ", copied);
+      Print("TRACE: Error copying EMA values - copied bars: ", copied);
       return;
    }
    
-   Print("TRACE: EMA Werte kopiert: ", copied, " Bars");
+   Print("TRACE: EMA values copied: ", copied, " bars");
    Print("TRACE: EMA [0]: ", esData.ema_array[0], " [1]: ", esData.ema_array[1], " [2]: ", esData.ema_array[2]);
 }
 
@@ -132,7 +132,7 @@ void PrüfeTrigger()
 {
    if(ArraySize(esData.ema_array) < 2)
    {
-      Print("TRACE: Array zu klein - Größe: ", ArraySize(esData.ema_array));
+      Print("TRACE: EMA array is too small - size: ", ArraySize(esData.ema_array));
       return;
    }
    
@@ -162,8 +162,8 @@ void PrüfeTrigger()
       if(crossover_bullish || crossover_bearish)
       {
          esData.trades_in_current_crossover = 0; // Reset trade counter
-         Print("TRACE: EMA Crossover erkannt - ", (crossover_bullish ? "BULLISH" : "BEARISH"), " - Trade-Counter zurückgesetzt");
-         Print("TRACE: Vorher: Close=", last_close, " EMA=", last_ema, " Jetzt: Close=", aktueller_close, " EMA=", ema_aktuell);
+          Print("TRACE: EMA crossover detected - ", (crossover_bullish ? "BULLISH" : "BEARISH"), " - trade counter reset");
+          Print("TRACE: Previous: Close=", last_close, " EMA=", last_ema, " Current: Close=", aktueller_close, " EMA=", ema_aktuell);
       }
    }
    
@@ -174,25 +174,25 @@ void PrüfeTrigger()
    //--- Preisbewegung zur EMA prüfen (Check price action to EMA)
    double preis_abstand = MathAbs(aktueller_close - ema_aktuell) / point / pips_multiplier;
    
-   Print("TRACE: Preis-Abstand: ", preis_abstand, " Pips (Schwelle: ", ES_PreisSchwelle, ")");
+   Print("TRACE: Price distance: ", preis_abstand, " pips (threshold: ", ES_PreisSchwelle, ")");
    Print("TRACE: Close: ", aktueller_close, " EMA: ", ema_aktuell);
-   Print("TRACE: Trades im aktuellen Crossover: ", esData.trades_in_current_crossover, "/", ES_MaxTradesPerCrossover);
+   Print("TRACE: Trades in current crossover: ", esData.trades_in_current_crossover, "/", ES_MaxTradesPerCrossover);
    
    if(preis_abstand > ES_PreisSchwelle && !esData.preis_trigger_aktiv)
    {
       esData.preis_trigger_aktiv = true;
-      Print("TRACE: Preis-Trigger aktiviert: ", preis_abstand, " Pips");
+      Print("TRACE: Price trigger activated: ", preis_abstand, " pips");
    }
    
    //--- EMA Steigung prüfen (Check EMA slope)
    double steigung = (ema_aktuell - ema_vorher) / point / pips_multiplier;
    
-   Print("TRACE: EMA Steigung: ", steigung, " Pips (Schwelle: ", ES_SteigungSchwelle, ")");
+   Print("TRACE: EMA slope: ", steigung, " pips (threshold: ", ES_SteigungSchwelle, ")");
    
    if(MathAbs(steigung) > ES_SteigungSchwelle && !esData.steigung_trigger_aktiv)
    {
       esData.steigung_trigger_aktiv = true;
-      Print("TRACE: Steigungs-Trigger aktiviert: ", steigung, " Pips");
+      Print("TRACE: Slope trigger activated: ", steigung, " pips");
    }
    
    //--- Überwachung starten wenn beide Trigger aktiv sind (Start monitoring when both triggers are active)
@@ -203,12 +203,12 @@ void PrüfeTrigger()
       if(ES_UseBarData)
       {
          esData.letzte_überwachung_zeit = iTime(esData.symbol, ES_Timeframe, 0); // Aktuelle Bar-Zeit
-         Print("TRACE: Überwachung gestartet - Beide Trigger aktiv (Bar: ", TimeToString(esData.letzte_überwachung_zeit), ")");
+          Print("TRACE: Monitoring started - both triggers active (bar: ", TimeToString(esData.letzte_überwachung_zeit), ")");
       }
       else
       {
          esData.letzte_überwachung_zeit = TimeCurrent(); // Aktuelle Tick-Zeit
-         Print("TRACE: Überwachung gestartet - Beide Trigger aktiv (Tick)");
+          Print("TRACE: Monitoring started - both triggers active (tick)");
       }
    }
    
@@ -220,12 +220,12 @@ void PrüfeTrigger()
       
       Print("TRACE: Signal Check - Bullish: ", bullish_signal, " Bearish: ", bearish_signal);
       Print("TRACE: Close: ", aktueller_close, " EMA: ", ema_aktuell);
-      Print("TRACE: Differenz: ", aktueller_close - ema_aktuell);
+      Print("TRACE: Difference: ", aktueller_close - ema_aktuell);
       
       //--- Trade-Limit prüfen (Check trade limit)
       if(esData.trades_in_current_crossover >= ES_MaxTradesPerCrossover)
       {
-         Print("TRACE: Trade-Limit erreicht (", ES_MaxTradesPerCrossover, ") - Kein neuer Trade");
+          Print("TRACE: Trade limit reached (", ES_MaxTradesPerCrossover, ") - no new trade");
          return;
       }
       
@@ -233,10 +233,10 @@ void PrüfeTrigger()
       {
          if(!ES_IsWeeklyADXTrendFavorable(ORDER_TYPE_BUY))
          {
-            Print("TRACE: Weekly ADX blockiert BUY-Entry");
+             Print("TRACE: Weekly ADX blocked BUY entry");
             return;
          }
-         Print("TRACE: Versuche KAUF-Trade zu platzieren (Trade #", esData.trades_in_current_crossover + 1, ")");
+          Print("TRACE: Attempting BUY trade (trade #", esData.trades_in_current_crossover + 1, ")");
          if(PlatziereTrade(ORDER_TYPE_BUY))
          {
             esData.trades_in_current_crossover++;
@@ -246,10 +246,10 @@ void PrüfeTrigger()
       {
          if(!ES_IsWeeklyADXTrendFavorable(ORDER_TYPE_SELL))
          {
-            Print("TRACE: Weekly ADX blockiert SELL-Entry");
+             Print("TRACE: Weekly ADX blocked SELL entry");
             return;
          }
-         Print("TRACE: Versuche VERKAUF-Trade zu platzieren (Trade #", esData.trades_in_current_crossover + 1, ")");
+          Print("TRACE: Attempting SELL trade (trade #", esData.trades_in_current_crossover + 1, ")");
          if(PlatziereTrade(ORDER_TYPE_SELL))
          {
             esData.trades_in_current_crossover++;
@@ -257,7 +257,7 @@ void PrüfeTrigger()
       }
       else if(PositionExistsByMagic(esData.symbol, (ulong)ES_MagicNumber))
       {
-         Print("TRACE: Position bereits offen - kein neuer Trade");
+          Print("TRACE: Position already open - no new trade");
       }
    }
 }
@@ -267,12 +267,12 @@ void PrüfeTrigger()
 //+------------------------------------------------------------------+
 bool PlatziereTrade(ENUM_ORDER_TYPE order_type)
 {
-   Print("TRACE: Versuche Trade zu platzieren - Typ: ", (order_type == ORDER_TYPE_BUY) ? "KAUF" : "VERKAUF");
+   Print("TRACE: Attempting to place trade - type: ", (order_type == ORDER_TYPE_BUY) ? "BUY" : "SELL");
    const double lot = United_NormalizeVolume(esData.symbol, g_ES_LotSize);
    Print("TRACE: Lot (raw): ", g_ES_LotSize, " normalized: ", lot);
    if(lot <= 0.0)
    {
-      Print("TRACE: Abbruch — Lot nach Normalisierung ungültig");
+      Print("TRACE: Abort - normalized lot is invalid");
       return false;
    }
 
@@ -290,12 +290,12 @@ bool PlatziereTrade(ENUM_ORDER_TYPE order_type)
    if(success)
    {
       esData.ticket = (int)esData.trade.ResultOrder();
-      Print("TRACE: Trade erfolgreich platziert: ", (order_type == ORDER_TYPE_BUY) ? "KAUF" : "VERKAUF", " Ticket: ", esData.ticket);
+      Print("TRACE: Trade placed successfully: ", (order_type == ORDER_TYPE_BUY) ? "BUY" : "SELL", " Ticket: ", esData.ticket);
       
       //--- Trade-Öffnungszeit speichern (Save trade opening time)
       esData.trade_open_time = iTime(esData.symbol, ES_Timeframe, 0);
       esData.es_last_sl_adjust_success_time = 0;
-      Print("TRACE: Trade-Öffnungszeit: ", TimeToString(esData.trade_open_time));
+      Print("TRACE: Trade open time: ", TimeToString(esData.trade_open_time));
       
       //--- Überwachung zurücksetzen (Reset monitoring)
       esData.überwachung_aktiv = false;
@@ -306,8 +306,8 @@ bool PlatziereTrade(ENUM_ORDER_TYPE order_type)
    }
    else
    {
-      Print("TRACE: Fehler beim Platzieren des Trades - Retcode: ", esData.trade.ResultRetcode());
-      Print("TRACE: Fehlerbeschreibung: ", esData.trade.ResultRetcodeDescription());
+      Print("TRACE: Error placing trade - retcode: ", esData.trade.ResultRetcode());
+      Print("TRACE: Error description: ", esData.trade.ResultRetcodeDescription());
       
       return false;
    }
@@ -328,7 +328,7 @@ void VerwalteTrades()
          : (datetime)PositionGetInteger(POSITION_TIME);
       if(TimeCurrent() - stale_ref >= ES_StaleStopLossSeconds)
       {
-         SchließePosition("Stale stop loss - keine SL-Anpassung");
+         SchließePosition("Stale stop loss - no SL adjustment");
          return;
       }
    }
@@ -378,22 +378,22 @@ void VerwalteTrades()
       
       if(exit_bullish || exit_bearish)
       {
-         Print("TRACE: Ausstiegssignal - Close: ", aktueller_close, " EMA: ", ema_aktuell);
+          Print("TRACE: Exit signal - Close: ", aktueller_close, " EMA: ", ema_aktuell);
          SchließePosition("EMA Crossover Exit");
          
-         Print("TRACE: Position geschlossen - Trade-Counter bleibt bei ", esData.trades_in_current_crossover);
+          Print("TRACE: Position closed - trade counter remains ", esData.trades_in_current_crossover);
       }
    }
    
    //--- Profit-Prüfung nach X Bars (Profit check after X bars)
    if(ES_CloseUnprofitableTrades && esData.trade_open_time != 0 && PositionExistsByMagic(esData.symbol, (ulong)ES_MagicNumber))
    {
-      Print("TRACE: Profit-Prüfung aktiviert - CloseUnprofitableTrades: ", ES_CloseUnprofitableTrades);
+       Print("TRACE: Profit check enabled - CloseUnprofitableTrades: ", ES_CloseUnprofitableTrades);
       PrüfeProfitNachBars();
    }
    else if(!ES_CloseUnprofitableTrades)
    {
-      Print("TRACE: Profit-Prüfung deaktiviert - CloseUnprofitableTrades: ", ES_CloseUnprofitableTrades);
+       Print("TRACE: Profit check disabled - CloseUnprofitableTrades: ", ES_CloseUnprofitableTrades);
    }
 }
 
@@ -410,7 +410,7 @@ void PrüfeProfitNachBars()
    datetime current_bar_time = iTime(esData.symbol, ES_Timeframe, 0);
    int bars_since_trade_open = iBarShift(esData.symbol, ES_Timeframe, esData.trade_open_time);
    
-   Print("TRACE: Bars seit Trade-Öffnung: ", bars_since_trade_open, "/", ES_ProfitCheckBars);
+    Print("TRACE: Bars since trade open: ", bars_since_trade_open, "/", ES_ProfitCheckBars);
    
    //--- Prüfe ob genügend Bars vergangen sind (Check if enough bars have passed)
    if(bars_since_trade_open >= ES_ProfitCheckBars)
@@ -419,22 +419,22 @@ void PrüfeProfitNachBars()
       double position_volume = PositionGetDouble(POSITION_VOLUME);
       ENUM_POSITION_TYPE position_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       
-      Print("TRACE: Profit-Prüfung nach ", ES_ProfitCheckBars, " Bars");
+       Print("TRACE: Profit check after ", ES_ProfitCheckBars, " bars");
       Print("TRACE: Position Profit: ", position_profit, " USD");
       
       //--- Schließe Position wenn nicht im Profit (Close position if not in profit)
       if(position_profit <= 0)
       {
-         Print("TRACE: Position nicht im Profit - Schließe Position");
+          Print("TRACE: Position is not profitable - closing position");
          SchließePosition("Profit Check - Unprofitable");
          
          //--- Trade-Öffnungszeit zurücksetzen (Reset trade opening time)
          esData.trade_open_time = 0;
-         Print("TRACE: Trade-Öffnungszeit zurückgesetzt");
+          Print("TRACE: Trade open time reset");
       }
       else
       {
-         Print("TRACE: Position im Profit - Behalte Position");
+          Print("TRACE: Position is profitable - keeping position");
          //--- Trade-Öffnungszeit zurücksetzen um weitere Prüfungen zu vermeiden (Reset to avoid further checks)
          esData.trade_open_time = 0;
       }
@@ -446,40 +446,40 @@ void PrüfeProfitNachBars()
 //+------------------------------------------------------------------+
 void ÄndereStopLoss(double new_stop_loss)
 {
-   Print("TRACE: Versuche Stop Loss zu ändern auf: ", new_stop_loss);
+   Print("TRACE: Attempting to modify stop loss to: ", new_stop_loss);
    
    bool success = ModifyPositionByMagic(esData.trade, esData.symbol, (ulong)ES_MagicNumber, new_stop_loss, PositionGetDouble(POSITION_TP));
    
    if(success)
    {
       esData.es_last_sl_adjust_success_time = TimeCurrent();
-      Print("TRACE: Stop Loss erfolgreich geändert auf: ", new_stop_loss);
+      Print("TRACE: Stop loss modified successfully to: ", new_stop_loss);
    }
    else
    {
-      Print("TRACE: Fehler beim Ändern des Stop Loss - Retcode: ", esData.trade.ResultRetcode());
-      Print("TRACE: Fehlerbeschreibung: ", esData.trade.ResultRetcodeDescription());
+      Print("TRACE: Error modifying stop loss - retcode: ", esData.trade.ResultRetcode());
+      Print("TRACE: Error description: ", esData.trade.ResultRetcodeDescription());
    }
 }
 
 //+------------------------------------------------------------------+
 //| Position schließen (Close position)                             |
 //+------------------------------------------------------------------+
-void SchließePosition(string reason = "Unbekannt")
+void SchließePosition(string reason = "Unknown")
 {
-   Print("TRACE: Versuche Position zu schließen - Grund: ", reason);
+   Print("TRACE: Attempting to close position - reason: ", reason);
    
    bool success = ClosePositionByMagic(esData.trade, esData.symbol, (ulong)ES_MagicNumber);
    
    if(success)
    {
       esData.es_last_sl_adjust_success_time = 0;
-      Print("TRACE: Position erfolgreich geschlossen - Grund: ", reason);
+      Print("TRACE: Position closed successfully - reason: ", reason);
    }
    else
    {
-      Print("TRACE: Fehler beim Schließen der Position - Retcode: ", esData.trade.ResultRetcode());
-      Print("TRACE: Fehlerbeschreibung: ", esData.trade.ResultRetcodeDescription());
+      Print("TRACE: Error closing position - retcode: ", esData.trade.ResultRetcode());
+      Print("TRACE: Error description: ", esData.trade.ResultRetcodeDescription());
    }
 }
 
@@ -518,23 +518,23 @@ void ProcessEMASlopeDistance(string symbol)
 
       if(ES_UseBarData)
       {
-         Print("=== DEBUG INFO (Neuer Bar) ===");
-         Print("Bar Zeit: ", TimeToString(iTime(esData.symbol, ES_Timeframe, 0)));
+          Print("=== DEBUG INFO (new bar) ===");
+          Print("Bar time: ", TimeToString(iTime(esData.symbol, ES_Timeframe, 0)));
       }
       else
       {
          Print("=== DEBUG INFO (Tick) ===");
       }
 
-      Print("Aktueller Close: ", aktueller_close);
+       Print("Current close: ", aktueller_close);
       Print("EMA: ", ema_aktuell);
-      Print("Preis-Abstand: ", preis_abstand, " Pips");
-      Print("EMA Steigung: ", steigung, " Pips");
-      Print("Differenz Close-EMA: ", aktueller_close - ema_aktuell);
-      Print("Preis-Trigger: ", esData.preis_trigger_aktiv, " Steigungs-Trigger: ", esData.steigung_trigger_aktiv);
-      Print("Überwachung aktiv: ", esData.überwachung_aktiv);
-      Print("Position offen: ", PositionExistsByMagic(esData.symbol, (ulong)ES_MagicNumber));
-      Print("Trades im aktuellen Crossover: ", esData.trades_in_current_crossover, "/", ES_MaxTradesPerCrossover);
+       Print("Price distance: ", preis_abstand, " pips");
+       Print("EMA slope: ", steigung, " pips");
+       Print("Close-EMA difference: ", aktueller_close - ema_aktuell);
+       Print("Price trigger: ", esData.preis_trigger_aktiv, " Slope trigger: ", esData.steigung_trigger_aktiv);
+       Print("Monitoring active: ", esData.überwachung_aktiv);
+       Print("Position open: ", PositionExistsByMagic(esData.symbol, (ulong)ES_MagicNumber));
+       Print("Trades in current crossover: ", esData.trades_in_current_crossover, "/", ES_MaxTradesPerCrossover);
       Print("==================");
    }
 
@@ -552,7 +552,7 @@ void ProcessEMASlopeDistance(string symbol)
                esData.überwachung_aktiv = false;
                esData.preis_trigger_aktiv = false;
                esData.steigung_trigger_aktiv = false;
-               Print("Überwachung beendet - Bar-basierte Zeitüberschreitung (", bars_since_monitoring, " Bars)");
+                Print("Monitoring ended - bar-based timeout (", bars_since_monitoring, " bars)");
             }
          }
          else
@@ -562,7 +562,7 @@ void ProcessEMASlopeDistance(string symbol)
                esData.überwachung_aktiv = false;
                esData.preis_trigger_aktiv = false;
                esData.steigung_trigger_aktiv = false;
-               Print("Überwachung beendet - Tick-basierte Zeitüberschreitung");
+                Print("Monitoring ended - tick-based timeout");
             }
          }
       }

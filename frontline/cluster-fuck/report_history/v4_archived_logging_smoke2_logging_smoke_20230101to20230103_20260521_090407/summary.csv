@@ -1,0 +1,448 @@
+Strategy Tester Report
+ICMarketsSC-MT5-6 (Build 5836)
+Settings
+Expert:,main
+Symbol:,EURUSD
+Period:,H1 (2023.01.01 - 2023.01.03)
+Inputs:,=== Strategy Enable/Disable ====
+EnableDarvasBox=true
+EnableEMASlopeDistance=true
+EnableRSICrossOverReversal=true
+EnableRSIMidPointHijack=true
+EnableRSIScalpingAPPL=true
+EnableRSIScalpingBTCUSD=true
+EnableRSIScalpingNVDA=true
+EnableRSIScalpingTSLA=true
+EnableRSIScalpingXAUUSD=true
+EnableSuperEMA=true
+EnableRSIConsolidation=true
+EnableRSIReversalAsianEURUSD=true
+EnableRSIReversalAsianAUDUSD=true
+EnableSimpleTrendlineBTCUSD=true
+EnableSimpleTrendlineXAUUSD=true
+EnableSimpleTrendlineGER40=true
+EnableRSISecretSauce=true
+=== Centralized Lot Size (Granular Per Robot) ====
+LOT_DB_DarvasBox=0.05
+LOT_ES_EMASlopeDistance=0.05
+LOT_RC_RSICrossOver=0.06
+LOT_RM_RSIMidPointHijack=0.03
+LOT_RS_APPL=5.0
+LOT_RS_BTCUSD=0.1
+LOT_RS_NVDA=10.0
+LOT_RS_TSLA=15.0
+LOT_RS_XAUUSD=0.1
+LOT_RRA_EURUSD=0.05
+LOT_RRA_AUDUSD=0.08
+LOT_SE_SuperEMA=0.02
+LOT_RCO_RSIConsolidation=0.02
+LOT_ST_BTCUSD=0.07
+LOT_ST_XAUUSD=0.01
+LOT_ST_GER40=0.1
+LOT_RSS_SecretSauce=0.01
+=== Balance-based position sizing ====
+ORCH_ScaleLotsByBalance=true
+ORCH_UseEquityInsteadOfBalance=false
+ORCH_ReferenceBalance=10000.0
+ORCH_MinBalanceScale=0.1
+ORCH_MaxBalanceScale=10.0
+=== DarvasBox Strategy ====
+DB_Symbol=XAUUSD
+DB_BoxPeriod=165
+DB_BoxDeviation=30000.0
+DB_VolumeThreshold=0
+DB_StopLoss=1665.0
+DB_TakeProfit=3685.0
+DB_EnableLogging=false
+DB_BoxColor=16711680
+DB_BoxWidth=1
+DB_TrendTimeframe=16386
+DB_MA_Period=125
+DB_MA_Method=1
+DB_MA_Price=7
+DB_TrendThreshold=4.94
+DB_VolumeMA_Period=110
+DB_VolumeThresholdMultiplier=1.5
+DB_UseVolumeSpikeFilter=true
+DB_UseTrendFilter=true
+DB_MagicNumber=135790
+=== EMA Slope Distance Strategy ====
+ES_Symbol=XAUUSD
+ES_EMA_Periode=46
+ES_PreisSchwelle=600.0
+ES_SteigungSchwelle=80.0
+ES_ÜberwachungTimeout=800
+ES_TrailingStop=370.0
+ES_UseTrailingStop=true
+ES_TrailingActivationPips=0.0
+ES_UseStaleStopLossExit=false
+ES_StaleStopLossSeconds=33800
+ES_LotGröße=0.03
+ES_MagicNumber=12350
+ES_UseSpreadAdjustment=true
+ES_Timeframe=16385
+ES_UseBarData=true
+ES_MaxTradesPerCrossover=9
+ES_ProfitCheckBars=18
+ES_CloseUnprofitableTrades=true
+ES_UseWeeklyADXFilter=true
+ES_WeeklyADXPeriod=15
+ES_WeeklyADXMin=40.0
+ES_WeeklyADXBarShift=2
+ES_WeeklyADXUseDirection=true
+=== RSI CrossOver Reversal Strategy ====
+RC_Symbol=XAUUSD
+RC_MagicNumber=7
+RC_rsiPeriod=19
+RC_overboughtLevel=93
+RC_oversoldLevel=22
+RC_entryRSIBuySpread=0.0
+RC_entryRSISellSpread=0.0
+RC_lotSize=0.01
+RC_slippage=3
+RC_cooldownSeconds=209
+RC_TimeFrame1=1
+RC_TimeFrame2=1
+RC_BarTimeFrame=12
+RC_emaPeriod=140
+RC_emaSlopeThreshold=105.0
+RC_exitBuyRSI=86.0
+RC_exitSellRSI=10.0
+RC_TrailingStop=295.0
+RC_emaDistanceThreshold=165.0
+RC_UseTrendStrengthFilter=true
+RC_tradingHourOneBegin=24
+RC_tradingHourOneEnd=22
+RC_tradingHourTwoBegin=6
+RC_tradingHourTwoEnd=19
+RC_Sunday=false
+RC_Monday=false
+RC_Tuesday=true
+RC_Wednesday=true
+RC_Thursday=true
+RC_Friday=false
+RC_Saturday=false
+=== RSI MidPoint Hijack Strategy ====
+RM_Symbol=XAUUSD
+RM_InpTimeframe=16385
+RM_InpLotSize=0.02
+RM_InpMagicNumberRSIFollow=1001
+RM_InpMagicNumberRSIReverse=1002
+RM_InpMagicNumberEMACross=1003
+RM_InpEnableRSIFollow=true
+RM_InpEnableRSIReverse=true
+RM_InpEnableEMACross=true
+RM_InpEnableStrategyLock=false
+RM_InpLockProfitThreshold=0.0
+RM_InpCloseOppositeTrades=false
+RM_InpRSIPeriod=32
+RM_InpRSIOverbought=78
+RM_InpRSIOversold=46
+RM_InpRSIExitLevel=44
+RM_InpRSIFollowStartHour=23
+RM_InpRSIFollowEndHour=8
+RM_InpRSIFollowCloseOutsideHours=false
+RM_InpRSIReversePeriod=59
+RM_InpRSIReverseOverbought=51
+RM_InpRSIReverseOversold=49
+RM_InpRSIReverseCrossLevel=53
+RM_InpRSIReverseExitLevel=48
+RM_InpRSIReverseStartHour=7
+RM_InpRSIReverseEndHour=13
+RM_InpRSIReverseCloseOutsideHours=false
+RM_InpRSIReverseCooldownBars=15
+RM_InpRSIReverseCooldownOnLoss=true
+RM_InpEMAPeriod=120
+RM_InpEMACrossStartHour=8
+RM_InpEMACrossEndHour=14
+RM_InpEMACrossCloseOutsideHours=true
+RM_InpUseEMADistanceEntry=true
+RM_InpEMADistancePips=160.0
+RM_InpEMADistancePeriod=26
+=== RSI Scalping APPL (AAPL) - Pepperstone US ====
+RS_APPL_Symbol=AAPL.NAS
+RS_APPL_TimeFrame=10
+RS_APPL_RSI_Period=14
+RS_APPL_RSI_Applied_Price=1
+RS_APPL_RSI_Overbought=80.0
+RS_APPL_RSI_Oversold=78.0
+RS_APPL_RSI_Target_Buy=94.0
+RS_APPL_RSI_Target_Sell=44.0
+RS_APPL_BarsToWait=7
+RS_APPL_LotSize=25.0
+RS_APPL_MagicNumber=20001
+RS_APPL_Slippage=3
+=== RSI Scalping BTCUSD ====
+RS_BTCUSD_Symbol=BTCUSD
+RS_BTCUSD_TimeFrame=16385
+RS_BTCUSD_RSI_Period=14
+RS_BTCUSD_RSI_Applied_Price=1
+RS_BTCUSD_RSI_Overbought=90.0
+RS_BTCUSD_RSI_Oversold=73.0
+RS_BTCUSD_RSI_Target_Buy=88.0
+RS_BTCUSD_RSI_Target_Sell=48.0
+RS_BTCUSD_BarsToWait=6
+RS_BTCUSD_LotSize=0.1
+RS_BTCUSD_MagicNumber=123459123
+RS_BTCUSD_Slippage=3
+=== RSI Scalping NVDA - Pepperstone US ====
+RS_NVDA_Symbol=NVDA.NAS
+RS_NVDA_TimeFrame=15
+RS_NVDA_RSI_Period=8
+RS_NVDA_RSI_Applied_Price=1
+RS_NVDA_RSI_Overbought=36.0
+RS_NVDA_RSI_Oversold=38.0
+RS_NVDA_RSI_Target_Buy=90.0
+RS_NVDA_RSI_Target_Sell=70.0
+RS_NVDA_BarsToWait=5
+RS_NVDA_LotSize=50.0
+RS_NVDA_MagicNumber=20003
+RS_NVDA_Slippage=3
+=== RSI Scalping TSLA - Pepperstone US ====
+RS_TSLA_Symbol=TSLA.NAS
+RS_TSLA_TimeFrame=16385
+RS_TSLA_RSI_Period=14
+RS_TSLA_RSI_Applied_Price=1
+RS_TSLA_RSI_Overbought=54.0
+RS_TSLA_RSI_Oversold=73.0
+RS_TSLA_RSI_Target_Buy=87.0
+RS_TSLA_RSI_Target_Sell=33.0
+RS_TSLA_BarsToWait=1
+RS_TSLA_LotSize=50.0
+RS_TSLA_MagicNumber=125421321
+RS_TSLA_Slippage=3
+=== RSI Scalping XAUUSD ====
+RS_XAUUSD_Symbol=XAUUSD
+RS_XAUUSD_TimeFrame=16385
+RS_XAUUSD_RSI_Period=14
+RS_XAUUSD_RSI_Applied_Price=1
+RS_XAUUSD_RSI_Overbought=71.0
+RS_XAUUSD_RSI_Oversold=57.0
+RS_XAUUSD_RSI_Target_Buy=80.0
+RS_XAUUSD_RSI_Target_Sell=57.0
+RS_XAUUSD_BarsToWait=4
+RS_XAUUSD_LotSize=0.1
+RS_XAUUSD_MagicNumber=129102315
+RS_XAUUSD_Slippage=3
+=== RSI Scalping Reversal Escape (XAUUSD only) ====
+RS_UseReversalEscape=true
+RS_ReversalATRPeriod=14
+RS_ReversalAdverseAtrMult=5.25
+RS_ReversalSignsRequired=2
+RS_ReversalRsiVelocity=16.0
+RS_ReversalBodyAtrMult=5.1
+=== RSI Scalping APPL — Trailing (cluster-fuck BTC-style defaul=
+RS_APPL_UseTrailingStop=true
+RS_APPL_TrailDistancePoints=120.0
+RS_APPL_TrailActivationPoints=0.0
+=== RSI Scalping BTCUSD — Trailing ====
+RS_BTCUSD_UseTrailingStop=true
+RS_BTCUSD_TrailDistancePoints=120.0
+RS_BTCUSD_TrailActivationPoints=0.0
+=== RSI Scalping NVDA — Trailing ====
+RS_NVDA_UseTrailingStop=true
+RS_NVDA_TrailDistancePoints=375.0
+RS_NVDA_TrailActivationPoints=75.0
+=== RSI Scalping TSLA — Trailing ====
+RS_TSLA_UseTrailingStop=true
+RS_TSLA_TrailDistancePoints=900.0
+RS_TSLA_TrailActivationPoints=950.0
+=== RSI Scalping XAUUSD — Trailing ====
+RS_XAUUSD_UseTrailingStop=true
+RS_XAUUSD_TrailDistancePoints=71.0
+RS_XAUUSD_TrailActivationPoints=41.0
+=== RSI Reversal Asian EURUSD ====
+RRA_EURUSD_Symbol=EURUSD
+RRA_EURUSD_RSIPeriod=28
+RRA_EURUSD_OverboughtLevel=60.0
+RRA_EURUSD_OversoldLevel=8.0
+RRA_EURUSD_TakeProfitPips=175
+RRA_EURUSD_StopLossPips=5
+RRA_EURUSD_MaxLotSize=0.1
+RRA_EURUSD_MaxSpread=1000
+RRA_EURUSD_MaxDuration=270
+RRA_EURUSD_UseStopLoss=false
+RRA_EURUSD_UseTakeProfit=false
+RRA_EURUSD_UseRSIExit=true
+RRA_EURUSD_RSIExitLevel=55.0
+RRA_EURUSD_CloseOutsideSession=false
+RRA_EURUSD_TimeFrame=15
+RRA_EURUSD_MagicNumber=30001
+RRA_EURUSD_Slippage=3
+=== RSI Reversal Asian AUDUSD ====
+RRA_AUDUSD_Symbol=AUDUSD
+RRA_AUDUSD_RSIPeriod=28
+RRA_AUDUSD_OverboughtLevel=68.0
+RRA_AUDUSD_OversoldLevel=30.0
+RRA_AUDUSD_TakeProfitPips=175
+RRA_AUDUSD_StopLossPips=5
+RRA_AUDUSD_MaxLotSize=0.2
+RRA_AUDUSD_MaxSpread=1000
+RRA_AUDUSD_MaxDuration=340
+RRA_AUDUSD_UseStopLoss=false
+RRA_AUDUSD_UseTakeProfit=false
+RRA_AUDUSD_UseRSIExit=true
+RRA_AUDUSD_RSIExitLevel=48.0
+RRA_AUDUSD_CloseOutsideSession=true
+RRA_AUDUSD_TimeFrame=15
+RRA_AUDUSD_MagicNumber=30002
+RRA_AUDUSD_Slippage=3
+=== SuperEMA (EMA + CCI + MACD) ====
+SE_Symbol=XAUUSD
+SE_Timeframe=15
+SE_LotSize=0.01
+SE_SlippagePoints=55
+SE_MagicNumber=940001
+SE_EmaFast=40
+SE_EmaMid=180
+SE_EmaSlow=125
+SE_EmaTrendBars=3
+SE_CciPeriod=17
+SE_CciOverbought=80.0
+SE_CciOversold=-140.0
+SE_PullbackCciLookback=20
+SE_MacdFast=14
+SE_MacdSlow=38
+SE_MacdSignal=9
+SE_EntryStyle=1
+SE_OneTradeOnly=true
+SE_UseStructuralSL=false
+SE_SlBufferPoints=110.0
+SE_ExitOnTrendFlip=false
+SE_ExitOnMacdFlip=false
+SE_ExitOnCciZeroCross=true
+SE_MaxHoldingBars=168
+SE_ExitBelowMidEma=false
+SE_DebugLogs=false
+=== RSI Consolidation (ranging / mean-reversion) ====
+RCO_Symbol=XAUUSD
+RCO_SignalTF=15
+RCO_EntryOnNewBarOnly=true
+RCO_ADX_Period=23
+RCO_ADX_Max=29.0
+RCO_UseATRRatioFilter=true
+RCO_ATR_Period=8
+RCO_ATR_SMA_Period=35
+RCO_ATR_Ratio_Max=1.36
+RCO_UseFlatEMAFilter=true
+RCO_EMA_Fast=13
+RCO_EMA_Slow=17
+RCO_EMA_Separation_MaxPct=0.26
+RCO_RSI_Period=8
+RCO_RSI_Price=2
+RCO_RSI_Oversold=22.0
+RCO_RSI_Overbought=63.0
+RCO_UseRSI_MeanExit=true
+RCO_RSI_Exit_Long=48.0
+RCO_RSI_Exit_Short=52.0
+RCO_SL_ATR_Mult=2.15
+RCO_TP_ATR_Mult=2.4
+RCO_MaxBarsInTrade=54
+RCO_Lots=0.1
+RCO_MagicNumber=20250420
+RCO_Slippage=10
+RCO_MaxSpreadPoints=28
+=== SimpleTrendline BTCUSD ====
+ST_BTC_Symbol=BTCUSD
+ST_BTC_SignalTF=16385
+ST_BTC_HigherTF=16388
+ST_BTC_MAPeriod=150
+ST_BTC_MAMethod=2
+ST_BTC_AppliedPrice=2
+ST_BTC_HTFBarsToScan=1200
+ST_BTC_LineTouchTolerance=170.0
+ST_BTC_BreakBuffer=90.0
+ST_BTC_MagicNumber=26042501
+ST_BTC_DrawTrendline=true
+=== SimpleTrendline XAUUSD ====
+ST_XAU_Symbol=XAUUSD
+ST_XAU_SignalTF=16385
+ST_XAU_HigherTF=10
+ST_XAU_MAPeriod=65
+ST_XAU_MAMethod=1
+ST_XAU_AppliedPrice=2
+ST_XAU_HTFBarsToScan=500
+ST_XAU_LineTouchTolerance=220.0
+ST_XAU_BreakBuffer=110.0
+ST_XAU_MagicNumber=26042503
+ST_XAU_DrawTrendline=true
+=== SimpleTrendline GER40 ====
+ST_GER_Symbol=DE40
+ST_GER_SignalTF=15
+ST_GER_HigherTF=15
+ST_GER_MAPeriod=65
+ST_GER_MAMethod=3
+ST_GER_AppliedPrice=2
+ST_GER_HTFBarsToScan=1200
+ST_GER_LineTouchTolerance=100.0
+ST_GER_BreakBuffer=80.0
+ST_GER_MagicNumber=26042502
+ST_GER_DrawTrendline=true
+=== RSI Secret Sauce XAUUSD ====
+RSS_Symbol=XAUUSD
+RSS_MagicNumber=789012
+RSS_Slippage=10
+RSS_Timeframe=30
+RSS_RSIPeriod=16
+RSS_RSIOverbought=72.5
+RSS_RSIOversold=32.5
+RSS_RSILookback=60
+RSS_PeakBars=2
+RSS_StopLossATR=2.75
+RSS_TakeProfitATR=5.0
+RSS_ATRPeriod=14
+RSS_UseSwingStopLoss=false
+RSS_SwingLookback=30
+RSS_MaxPositions=1
+RSS_MinBarsBetweenTrades=7
+Company:,Raw Trading Ltd
+Currency:,USD
+Initial Deposit:,3 000.00
+Leverage:,1:1000
+Results
+History Quality:,0% real ticks
+Bars:,24
+Ticks:,17077
+Symbols:,0
+Total Net Profit:,0.00
+Balance Drawdown Absolute:,0.00
+Equity Drawdown Absolute:,0.00
+Gross Profit:,0.00
+Balance Drawdown Maximal:,0.00 (0.00%)
+Equity Drawdown Maximal:,0.00 (0.00%)
+Gross Loss:,0.00
+Balance Drawdown Relative:,0.00% (0.00)
+Equity Drawdown Relative:,0.00% (0.00)
+Profit Factor:,0.00
+Expected Payoff:,0.00
+Margin Level:,
+Recovery Factor:,0.00
+Sharpe Ratio:,0.00
+Z-Score:,0.00 (0.00%)
+AHPR:,0.0000 (0.00%)
+LR Correlation:,0.00
+OnTester result:,0
+GHPR:,0.0000 (0.00%)
+LR Standard Error:,0.00
+Total Trades:,0
+Short Trades (won %):,0 (0.00%)
+Long Trades (won %):,0 (0.00%)
+Total Deals:,0
+Profit Trades (% of total):,0 (0.00%)
+Loss Trades (% of total):,0 (0.00%)
+Largest profit trade:,0.00
+Largest loss trade:,0.00
+Average profit trade:,0.00
+Average loss trade:,0.00
+Maximum consecutive wins ($):,0 (0.00)
+Maximum consecutive losses ($):,0 (0.00)
+Maximal consecutive profit (count):,0.00 (0)
+Maximal consecutive loss (count):,0.00 (0)
+Average consecutive wins:,0
+Average consecutive losses:,0
+"Correlation (Profits,MFE):",0.00
+"Correlation (Profits,MAE):",0.00
+"Correlation (MFE,MAE):",0.0000
+Minimal position holding time:,0:00:00
+Maximal position holding time:,0:00:00
+Average position holding time:,0:00:00

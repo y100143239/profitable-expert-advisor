@@ -1,0 +1,56 @@
+🚀 [INIT] 启动大型策略集群全自动回测流水线: v4_archived_logging_smoke7_logging_smoke_20260521_112536_20230101to20230103
+   --> Remote target: container=mt5-dev, base=/home/rits-student/podman/data/mt5/wine/drive_c/Program Files/MetaTrader 5
+
+📦 [STEP 1] 正在建立本地项目级 ZIP 快照 (绝对防丢失)...
+   --> [COMPILE] Skipping local compile, using existing EX5: C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\_united-V4_baseline_v2plus_mapper_20260513_144220\main.ex5
+🔧 正在适配本地 INI 配置文件以供服务器使用...
+
+📤 [STEP 2] 传输 ZIP 包至服务器并解压...
+   --> 正在推送压缩包...
+   --> 正在服务器端强制解压项目文件...
+   --> 项目文件部署完毕。
+
+🧹 [CLEAN] Killing old MT5 processes (terminal64 + metatester64)...
+
+🛠️ [STEP 3] 跳过容器内 MetaEditor 编译，使用已部署 EX5。
+
+🧽 [STEP 3.5] 清理远端陈旧 ReportTester.* 产物...
+   --> 跳过经济日历 CSV replay 数据同步。
+⏳ [STEP 4] 引擎轰鸣中：服务器开始执行真实分时高精度回测...
+   --> ⏰ 等待 ReportTester.html 落盘 (轮询，最长 45 分钟)...
+   --> ✅ Report 已稳定: 144380 bytes
+   --> 🔪 清理容器内残留 wineserver/wine 进程 (避免 ssh 阻塞)...
+   ⏱️ MT5 容器返回，进入产物回收阶段 (累计 51.4s)
+
+📥 [STEP 5] 正在回收全维度日志与报告...
+   --> 🛡️ 正在探测活跃 Agent 日志...
+   --> ✅ 日志摘要同步成功。
+   --> 📥 正在同步 HTML 回测报告...
+   --> 📸 正在远程打包并同步回测图片...
+tar: could not chdir to 'C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\report_history\v4_archived_logging_smoke7_logging_smoke_20260521_112536_20230101to20230103/'
+   --> ✅ 图片资源同步成功。
+
+🔬 [STEP 6] 数据后处理... (回收阶段累计 5.6s)
+📊 正在使用 v2 增强模块解析并分析回测数据...
+   --> 提取 HTML 表格: C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\_united-V4_baseline_v2plus_mapper_20260513_144220\html_to_xlsx_v2.py
+OK: summary.csv -> C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\report_history\v4_archived_logging_smoke7_logging_smoke_20260521_112536_20230101to20230103\summary.csv
+OK: deals.csv -> C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\report_history\v4_archived_logging_smoke7_logging_smoke_20260521_112536_20230101to20230103\deals.csv  (2 deals, 0.2 KB)
+   --> 执行增强版数据分析: C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\_united-V4_baseline_v2plus_mapper_20260513_144220\analyze_mt5_report_v2.py
+🔄 正在读取并解析文件: C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\report_history\v4_archived_logging_smoke7_logging_smoke_20260521_112536_20230101to20230103\deals.csv
+✅ 数据读取成功！正在执行基因匹配与全成本核算...
+
+🚨 策略真实净盈亏排行榜 & MT5 操作指南 🚨
+==========================================================================================
+评级   | 底层策略订单名 (Comment)              | 净利润($)     | MT5 面板对应开关
+------------------------------------------------------------------------------------------
+==========================================================================================
+💰 所有策略总净利润核对: 0.00 USD
+
+🛠️ 【仅手动优化时建议：MT5 傻瓜式斩首执行清单】
+
+📄 v2 Markdown 分析报告已保存至: C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\report_history\v4_archived_logging_smoke7_logging_smoke_20260521_112536_20230101to20230103\analysis_report_v2_20260521_112634.md
+   ⏱️ 后处理耗时 0.6s
+
+✨ [SUCCESS] 回测任务圆满完成！
+📂 档案专属保险箱: C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor.worktrees\agents-ea-backtesting-optimization-strategy\frontline\cluster-fuck\report_history\v4_archived_logging_smoke7_logging_smoke_20260521_112536_20230101to20230103
+⏱️ 机器打工总耗时: 57.62 秒

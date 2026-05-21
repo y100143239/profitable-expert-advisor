@@ -57,6 +57,102 @@ double g_Pos_ST_XAUUSD;
 double g_Pos_ST_GER40;
 double g_RSS_LotSize;
 
+input group "=== Global Portfolio Risk Manager ==="
+input bool   GRM_Enable = true;
+input int    GRM_PortfolioConsecutiveLossCount = 4;
+input int    GRM_PortfolioConsecutiveLossLookbackDays = 30;
+input bool   GRM_PortfolioConsecutiveLossLotThrottleEnable = true;
+input double GRM_PortfolioConsecutiveLossLotThrottleFactor = 0.80;
+input bool   GRM_DebugLogs = false;
+
+input group "=== Runtime Logging ==="
+input bool   LOG_Enable = true;
+input int    LOG_HeartbeatSeconds = 60;
+input int    LOG_StrategyStatusSeconds = 60;
+input bool   LOG_PrintInactiveStrategies = false;
+input bool   LOG_PrintPositionDetails = true;
+
+bool United_IsKnownV4Magic(const ulong magic)
+{
+   return magic == 135790
+       || magic == 12350
+       || magic == 7
+       || magic == 1001 || magic == 1002 || magic == 1003
+       || magic == 20001 || magic == 123459123 || magic == 20003 || magic == 125421321 || magic == 129102315
+       || magic == 30001 || magic == 30002
+       || magic == 940001
+       || magic == 20250420
+       || magic == 26042501 || magic == 26042502 || magic == 26042503
+       || magic == 789012;
+}
+
+int United_RecentPortfolioConsecutiveLosses(datetime &lastLossTime)
+{
+   lastLossTime = 0;
+   if(GRM_PortfolioConsecutiveLossCount <= 0)
+      return 0;
+
+   datetime from = TimeCurrent() - (datetime)MathMax(1, GRM_PortfolioConsecutiveLossLookbackDays) * 86400;
+   if(!HistorySelect(from, TimeCurrent()))
+      return 0;
+
+   int losses = 0;
+   int total = HistoryDealsTotal();
+   for(int dealIndex = total - 1; dealIndex >= 0; dealIndex--)
+   {
+      ulong deal = HistoryDealGetTicket(dealIndex);
+      if(deal == 0)
+         continue;
+      ulong magic = (ulong)HistoryDealGetInteger(deal, DEAL_MAGIC);
+      if(!United_IsKnownV4Magic(magic))
+         continue;
+
+      ENUM_DEAL_TYPE type = (ENUM_DEAL_TYPE)HistoryDealGetInteger(deal, DEAL_TYPE);
+      if(type != DEAL_TYPE_BUY && type != DEAL_TYPE_SELL)
+         continue;
+      ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal, DEAL_ENTRY);
+      if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_INOUT)
+         continue;
+
+      double pl = HistoryDealGetDouble(deal, DEAL_PROFIT)
+                + HistoryDealGetDouble(deal, DEAL_SWAP)
+                + HistoryDealGetDouble(deal, DEAL_COMMISSION);
+      if(pl < 0.0)
+      {
+         if(lastLossTime == 0)
+            lastLossTime = (datetime)HistoryDealGetInteger(deal, DEAL_TIME);
+         losses++;
+         continue;
+      }
+      break;
+   }
+   return losses;
+}
+
+double United_PortfolioLossLotThrottleFactor()
+{
+   if(!GRM_Enable || !GRM_PortfolioConsecutiveLossLotThrottleEnable)
+      return 1.0;
+
+   datetime lastLossTime = 0;
+   int losses = United_RecentPortfolioConsecutiveLosses(lastLossTime);
+   if(losses >= GRM_PortfolioConsecutiveLossCount)
+   {
+      double factor = MathMax(0.0, GRM_PortfolioConsecutiveLossLotThrottleFactor);
+      if(GRM_DebugLogs)
+         Print("GRM lot throttle active: portfolio consecutive losses=", losses, ", factor=", DoubleToString(factor, 2));
+      return factor;
+   }
+   return 1.0;
+}
+
+double United_LotThrottleFactor(const ulong magic)
+{
+   if(!United_IsKnownV4Magic(magic))
+      return 1.0;
+   return United_PortfolioLossLotThrottleFactor();
+}
+
 bool United_MayOpenNewEntry(const string symbol, const ulong magic, const bool isBuy)
 {
    if(PositionExistsByMagic(symbol, magic))
@@ -546,25 +642,31 @@ double United_ScaledLot(const double baseLot)
    return (lot > 0.0 ? lot : 0.0);
 }
 
+double United_ScaledRiskLot(const double baseLot, const ulong magic)
+{
+   const double lot = United_ScaledLot(baseLot) * United_LotThrottleFactor(magic);
+   return (lot > 0.0 ? lot : 0.0);
+}
+
 void United_RefreshScaledLots()
 {
-   g_DB_LotSize = United_ScaledLot(LOT_DB_DarvasBox);
-   g_ES_LotSize = United_ScaledLot(LOT_ES_EMASlopeDistance);
-   g_RC_LotSize = United_ScaledLot(LOT_RC_RSICrossOver);
-   g_RM_LotSize = United_ScaledLot(LOT_RM_RSIMidPointHijack);
-   g_Pos_RS_APPL = United_ScaledLot(LOT_RS_APPL);
-   g_Pos_RS_BTCUSD = United_ScaledLot(LOT_RS_BTCUSD);
-   g_Pos_RS_NVDA = United_ScaledLot(LOT_RS_NVDA);
-   g_Pos_RS_TSLA = United_ScaledLot(LOT_RS_TSLA);
-   g_Pos_RS_XAUUSD = United_ScaledLot(LOT_RS_XAUUSD);
-   g_Pos_RRA_EURUSD = United_ScaledLot(LOT_RRA_EURUSD);
-   g_Pos_RRA_AUDUSD = United_ScaledLot(LOT_RRA_AUDUSD);
-   g_Pos_SE = United_ScaledLot(LOT_SE_SuperEMA);
-   g_Pos_RCO = United_ScaledLot(LOT_RCO_RSIConsolidation);
-   g_Pos_ST_BTCUSD = United_ScaledLot(LOT_ST_BTCUSD);
-   g_Pos_ST_XAUUSD = United_ScaledLot(LOT_ST_XAUUSD);
-   g_Pos_ST_GER40 = United_ScaledLot(LOT_ST_GER40);
-   g_RSS_LotSize = United_ScaledLot(LOT_RSS_SecretSauce);
+   g_DB_LotSize = United_ScaledRiskLot(LOT_DB_DarvasBox, (ulong)DB_MagicNumber);
+   g_ES_LotSize = United_ScaledRiskLot(LOT_ES_EMASlopeDistance, (ulong)ES_MagicNumber);
+   g_RC_LotSize = United_ScaledRiskLot(LOT_RC_RSICrossOver, (ulong)RC_MagicNumber);
+   g_RM_LotSize = United_ScaledRiskLot(LOT_RM_RSIMidPointHijack, (ulong)RM_InpMagicNumberRSIFollow);
+   g_Pos_RS_APPL = United_ScaledRiskLot(LOT_RS_APPL, (ulong)RS_APPL_MagicNumber);
+   g_Pos_RS_BTCUSD = United_ScaledRiskLot(LOT_RS_BTCUSD, (ulong)RS_BTCUSD_MagicNumber);
+   g_Pos_RS_NVDA = United_ScaledRiskLot(LOT_RS_NVDA, (ulong)RS_NVDA_MagicNumber);
+   g_Pos_RS_TSLA = United_ScaledRiskLot(LOT_RS_TSLA, (ulong)RS_TSLA_MagicNumber);
+   g_Pos_RS_XAUUSD = United_ScaledRiskLot(LOT_RS_XAUUSD, (ulong)RS_XAUUSD_MagicNumber);
+   g_Pos_RRA_EURUSD = United_ScaledRiskLot(LOT_RRA_EURUSD, (ulong)RRA_EURUSD_MagicNumber);
+   g_Pos_RRA_AUDUSD = United_ScaledRiskLot(LOT_RRA_AUDUSD, (ulong)RRA_AUDUSD_MagicNumber);
+   g_Pos_SE = United_ScaledRiskLot(LOT_SE_SuperEMA, (ulong)SE_MagicNumber);
+   g_Pos_RCO = United_ScaledRiskLot(LOT_RCO_RSIConsolidation, (ulong)RCO_MagicNumber);
+   g_Pos_ST_BTCUSD = United_ScaledRiskLot(LOT_ST_BTCUSD, (ulong)ST_BTC_MagicNumber);
+   g_Pos_ST_XAUUSD = United_ScaledRiskLot(LOT_ST_XAUUSD, (ulong)ST_XAU_MagicNumber);
+   g_Pos_ST_GER40 = United_ScaledRiskLot(LOT_ST_GER40, (ulong)ST_GER_MagicNumber);
+   g_RSS_LotSize = United_ScaledRiskLot(LOT_RSS_SecretSauce, (ulong)RSS_MagicNumber);
 }
 
 //+------------------------------------------------------------------+
@@ -676,6 +778,152 @@ RSISecretSauceOrcData rssData;
 //+------------------------------------------------------------------+
 RSIReversalAsianData rraEURUSDData;
 RSIReversalAsianData rraAUDUSDData;
+
+datetime g_LastHeartbeatLog = 0;
+datetime g_LastStrategyStatusLog = 0;
+
+string United_BoolText(const bool value)
+{
+   return (value ? "true" : "false");
+}
+
+int United_CountPositionsForMagic(const string symbol, const ulong magic, double &profit)
+{
+   int count = 0;
+   profit = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+      if(PositionGetString(POSITION_SYMBOL) != symbol)
+         continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != magic)
+         continue;
+      count++;
+      profit += PositionGetDouble(POSITION_PROFIT)
+              + PositionGetDouble(POSITION_SWAP);
+   }
+   return count;
+}
+
+int United_CountPositionsForMagics(const string symbol, const ulong magic1, const ulong magic2, const ulong magic3, double &profit)
+{
+   int count = 0;
+   profit = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+      if(PositionGetString(POSITION_SYMBOL) != symbol)
+         continue;
+      ulong magic = (ulong)PositionGetInteger(POSITION_MAGIC);
+      if(magic != magic1 && magic != magic2 && magic != magic3)
+         continue;
+      count++;
+      profit += PositionGetDouble(POSITION_PROFIT)
+              + PositionGetDouble(POSITION_SWAP);
+   }
+   return count;
+}
+
+double United_SpreadPoints(const string symbol)
+{
+   double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+   if(point <= 0.0)
+      return 0.0;
+   return (SymbolInfoDouble(symbol, SYMBOL_ASK) - SymbolInfoDouble(symbol, SYMBOL_BID)) / point;
+}
+
+void United_LogStrategyState(const string name, const bool enabled, const string symbol, const bool initialized, const double lot, const ulong magic)
+{
+   if(!LOG_Enable || (!enabled && !LOG_PrintInactiveStrategies))
+      return;
+   double profit = 0.0;
+   int positions = United_CountPositionsForMagic(symbol, magic, profit);
+   if(LOG_PrintPositionDetails)
+      PrintFormat("[STRATEGY] name=%s enabled=%s initialized=%s symbol=%s magic=%I64u lot=%.4f positions=%d openPL=%.2f spreadPts=%.1f",
+                  name, United_BoolText(enabled), United_BoolText(initialized), symbol, magic, lot, positions, profit, United_SpreadPoints(symbol));
+   else
+      PrintFormat("[STRATEGY] name=%s enabled=%s initialized=%s symbol=%s magic=%I64u lot=%.4f spreadPts=%.1f",
+                  name, United_BoolText(enabled), United_BoolText(initialized), symbol, magic, lot, United_SpreadPoints(symbol));
+}
+
+void United_LogStrategyState3(const string name, const bool enabled, const string symbol, const bool initialized, const double lot,
+                              const ulong magic1, const ulong magic2, const ulong magic3)
+{
+   if(!LOG_Enable || (!enabled && !LOG_PrintInactiveStrategies))
+      return;
+   double profit = 0.0;
+   int positions = United_CountPositionsForMagics(symbol, magic1, magic2, magic3, profit);
+   if(LOG_PrintPositionDetails)
+      PrintFormat("[STRATEGY] name=%s enabled=%s initialized=%s symbol=%s magics=%I64u/%I64u/%I64u lot=%.4f positions=%d openPL=%.2f spreadPts=%.1f",
+                  name, United_BoolText(enabled), United_BoolText(initialized), symbol, magic1, magic2, magic3, lot, positions, profit, United_SpreadPoints(symbol));
+   else
+      PrintFormat("[STRATEGY] name=%s enabled=%s initialized=%s symbol=%s magics=%I64u/%I64u/%I64u lot=%.4f spreadPts=%.1f",
+                  name, United_BoolText(enabled), United_BoolText(initialized), symbol, magic1, magic2, magic3, lot, United_SpreadPoints(symbol));
+}
+
+void United_LogHeartbeat(const bool force = false)
+{
+   if(!LOG_Enable)
+      return;
+   datetime now = TimeCurrent();
+   int interval = MathMax(10, LOG_HeartbeatSeconds);
+   if(!force && g_LastHeartbeatLog > 0 && now - g_LastHeartbeatLog < interval)
+      return;
+   g_LastHeartbeatLog = now;
+
+   datetime lastLossTime = 0;
+   int losses = United_RecentPortfolioConsecutiveLosses(lastLossTime);
+   double throttle = United_PortfolioLossLotThrottleFactor();
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double margin = AccountInfoDouble(ACCOUNT_MARGIN);
+   double marginLoad = (equity > 0.0 ? margin / equity * 100.0 : 0.0);
+   PrintFormat("[HEARTBEAT] time=%s balance=%.2f equity=%.2f freeMargin=%.2f marginLoadPct=%.2f positions=%d grmLossStreak=%d grmThrottle=%.2f lastLoss=%s",
+               TimeToString(now, TIME_DATE | TIME_SECONDS),
+               AccountInfoDouble(ACCOUNT_BALANCE),
+               equity,
+               AccountInfoDouble(ACCOUNT_MARGIN_FREE),
+               marginLoad,
+               PositionsTotal(),
+               losses,
+               throttle,
+               (lastLossTime > 0 ? TimeToString(lastLossTime, TIME_DATE | TIME_SECONDS) : "none"));
+}
+
+void United_LogAllStrategyStates(const bool force = false)
+{
+   if(!LOG_Enable)
+      return;
+   datetime now = TimeCurrent();
+   int interval = MathMax(10, LOG_StrategyStatusSeconds);
+   if(!force && g_LastStrategyStatusLog > 0 && now - g_LastStrategyStatusLog < interval)
+      return;
+   g_LastStrategyStatusLog = now;
+
+   PrintFormat("[STRATEGY_STATUS_BEGIN] time=%s", TimeToString(now, TIME_DATE | TIME_SECONDS));
+   United_LogStrategyState("DarvasBox", EnableDarvasBox, s_DB_Symbol, dbData.isInitialized, g_DB_LotSize, (ulong)DB_MagicNumber);
+   United_LogStrategyState("EMASlopeDistance", EnableEMASlopeDistance, s_ES_Symbol, esData.isInitialized, g_ES_LotSize, (ulong)ES_MagicNumber);
+   United_LogStrategyState("RSICrossOverReversal", EnableRSICrossOverReversal, s_RC_Symbol, rcData.isInitialized, g_RC_LotSize, (ulong)RC_MagicNumber);
+   United_LogStrategyState3("RSIMidPointHijack", EnableRSIMidPointHijack, s_RM_Symbol, rmData.isInitialized, g_RM_LotSize,
+                            (ulong)RM_InpMagicNumberRSIFollow, (ulong)RM_InpMagicNumberRSIReverse, (ulong)RM_InpMagicNumberEMACross);
+   United_LogStrategyState("RSIScalpingAPPL", EnableRSIScalpingAPPL, s_RS_APPL, rsAPPLData.isInitialized, g_Pos_RS_APPL, (ulong)RS_APPL_MagicNumber);
+   United_LogStrategyState("RSIScalpingBTCUSD", EnableRSIScalpingBTCUSD, s_RS_BTCUSD, rsBTCUSDData.isInitialized, g_Pos_RS_BTCUSD, (ulong)RS_BTCUSD_MagicNumber);
+   United_LogStrategyState("RSIScalpingNVDA", EnableRSIScalpingNVDA, s_RS_NVDA, rsNVDAData.isInitialized, g_Pos_RS_NVDA, (ulong)RS_NVDA_MagicNumber);
+   United_LogStrategyState("RSIScalpingTSLA", EnableRSIScalpingTSLA, s_RS_TSLA, rsTSLAData.isInitialized, g_Pos_RS_TSLA, (ulong)RS_TSLA_MagicNumber);
+   United_LogStrategyState("RSIScalpingXAUUSD", EnableRSIScalpingXAUUSD, s_RS_XAUUSD, rsXAUUSDData.isInitialized, g_Pos_RS_XAUUSD, (ulong)RS_XAUUSD_MagicNumber);
+   United_LogStrategyState("RSISecretSauce", EnableRSISecretSauce, s_RSS_Symbol, rssData.isInitialized, g_RSS_LotSize, (ulong)RSS_MagicNumber);
+   United_LogStrategyState("SuperEMA", EnableSuperEMA, s_SE_Symbol, seData.isInitialized, g_Pos_SE, (ulong)SE_MagicNumber);
+   United_LogStrategyState("RSIConsolidation", EnableRSIConsolidation, s_RCO_Symbol, rcoData.isInitialized, g_Pos_RCO, (ulong)RCO_MagicNumber);
+   United_LogStrategyState("RSIReversalAsianEURUSD", EnableRSIReversalAsianEURUSD, s_RRA_EURUSD, rraEURUSDData.isInitialized, g_Pos_RRA_EURUSD, (ulong)RRA_EURUSD_MagicNumber);
+   United_LogStrategyState("RSIReversalAsianAUDUSD", EnableRSIReversalAsianAUDUSD, s_RRA_AUDUSD, rraAUDUSDData.isInitialized, g_Pos_RRA_AUDUSD, (ulong)RRA_AUDUSD_MagicNumber);
+   United_LogStrategyState("SimpleTrendlineBTCUSD", EnableSimpleTrendlineBTCUSD, s_ST_BTC_Symbol, stBTCData.isInitialized, g_Pos_ST_BTCUSD, (ulong)ST_BTC_MagicNumber);
+   United_LogStrategyState("SimpleTrendlineXAUUSD", EnableSimpleTrendlineXAUUSD, s_ST_XAU_Symbol, stXAUData.isInitialized, g_Pos_ST_XAUUSD, (ulong)ST_XAU_MagicNumber);
+   United_LogStrategyState("SimpleTrendlineGER40", EnableSimpleTrendlineGER40, s_ST_GER_Symbol, stGERData.isInitialized, g_Pos_ST_GER40, (ulong)ST_GER_MagicNumber);
+   Print("[STRATEGY_STATUS_END]");
+}
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -817,8 +1065,12 @@ int OnInit()
          (EnableRSIReversalAsianEURUSD ? "RSIReversalAsianEURUSD " : ""),
          (EnableRSIReversalAsianAUDUSD ? "RSIReversalAsianAUDUSD " : ""),
          (EnableSimpleTrendlineBTCUSD ? "SimpleTrendlineBTCUSD " : ""),
-         (EnableSimpleTrendlineXAUUSD ? "SimpleTrendlineXAUUSD " : ""),
-         (EnableSimpleTrendlineGER40 ? "SimpleTrendlineGER40 " : ""));
+          (EnableSimpleTrendlineXAUUSD ? "SimpleTrendlineXAUUSD " : ""),
+          (EnableSimpleTrendlineGER40 ? "SimpleTrendlineGER40 " : ""));
+
+   Print("[BUILD_ID] v_logging_1_en");
+   United_LogHeartbeat(true);
+   United_LogAllStrategyStates(true);
    
    return initResult;
 }
@@ -886,6 +1138,8 @@ void OnDeinit(const int reason)
 void OnTick()
 {
    United_RefreshScaledLots();
+   United_LogHeartbeat();
+   United_LogAllStrategyStates();
 
    if(EnableDarvasBox) // Trend / Breakout
       ProcessDarvasBox(s_DB_Symbol);

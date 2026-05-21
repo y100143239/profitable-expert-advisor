@@ -36,11 +36,12 @@ CONTAINER_NAME = os.environ.get("MT5_CONTAINER_NAME", "mt5-dev")
 SSH_OPTS = "-o ServerAliveInterval=30 -o ServerAliveCountMax=5 -o ConnectTimeout=10"
 
 # ================= 2. 本机 Win11 路径配置 =================
-PROJECT_ROOT = r"C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor\frontline\cluster-fuck"
+DEFAULT_PROJECT_ROOT = r"C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors\y100143239\profitable-expert-advisor\frontline\cluster-fuck"
+LOCAL_SOURCE_DIR = os.environ.get("MT5_V4_LOCAL_SOURCE_DIR", os.path.join(DEFAULT_PROJECT_ROOT, "_united-V4"))
+PROJECT_ROOT = os.environ.get("MT5_V4_PROJECT_ROOT", os.path.dirname(os.path.abspath(LOCAL_SOURCE_DIR)))
 REPO_ROOT = os.path.dirname(os.path.dirname(PROJECT_ROOT))
 
-LOCAL_SOURCE_DIR = os.environ.get("MT5_V4_LOCAL_SOURCE_DIR", os.path.join(PROJECT_ROOT, "_united-V4"))
-HISTORY_BASE_DIR = os.path.join(PROJECT_ROOT, "report_history")
+HISTORY_BASE_DIR = os.environ.get("MT5_V4_HISTORY_BASE_DIR", os.path.join(PROJECT_ROOT, "report_history"))
 LOCAL_INI_PATH = os.environ.get("MT5_V4_LOCAL_INI_PATH", os.path.join(LOCAL_SOURCE_DIR, "auto_tester_config.ini"))
 LOCAL_METAEDITOR = r"C:\Users\82204\AppData\Roaming\MetaTrader 5\metaeditor64.exe"
 
@@ -143,40 +144,73 @@ def run(cmd, timeout=300):
     return result
 
 def compile_local_expert():
+    """Compile main.mq5 via MetaEditor using a short temp path to avoid Windows MAX_PATH limits.
+
+    Root cause: MetaEditor CLI silently fails to write EX5 when the source path exceeds
+    ~260 chars (Windows MAX_PATH). Fix: copy source to a short temp dir under Experts\Advisors,
+    compile there, copy EX5 back, then clean up.
+    """
     source = os.path.join(LOCAL_SOURCE_DIR, "main.mq5")
     ex5 = os.path.join(LOCAL_SOURCE_DIR, "main.ex5")
-    log = os.path.join(LOCAL_SOURCE_DIR, "main.log")
+
     if os.environ.get("MT5_SKIP_LOCAL_COMPILE", "0") == "1":
         if not os.path.exists(ex5):
-            print(f"\n🚫 MT5_SKIP_LOCAL_COMPILE=1 but EX5 is missing: {ex5}")
+            print(f"\n[ERROR] MT5_SKIP_LOCAL_COMPILE=1 but EX5 is missing: {ex5}")
             exit(1)
-        print(f"   --> 跳过本地编译，使用已有 EX5: {ex5}")
+        print(f"   --> [COMPILE] Skipping local compile, using existing EX5: {ex5}")
         return
     if not os.path.exists(LOCAL_METAEDITOR):
-        print(f"\n🚫 本地 MetaEditor 不存在: {LOCAL_METAEDITOR}")
+        print(f"\n[ERROR] MetaEditor not found: {LOCAL_METAEDITOR}")
         exit(1)
+
+    # Use a short temp path under the known-working Experts\Advisors dir
+    experts_dir = r"C:\Users\82204\AppData\Roaming\MetaQuotes\Terminal\D3027A7456F1BED80051EF2A0D0DD331\MQL5\Experts\Advisors"
+    tmp_dir = os.path.join(experts_dir, "_v4tmp_compile")
+    tmp_mq5 = os.path.join(tmp_dir, "main.mq5")
+    tmp_ex5 = os.path.join(tmp_dir, "main.ex5")
+    tmp_log = os.path.join(tmp_dir, "main.log")
+
+    print(f"   --> [COMPILE] Copying source to short-path temp dir (MAX_PATH workaround): {tmp_dir}")
+    if os.path.exists(tmp_dir):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    shutil.copytree(LOCAL_SOURCE_DIR, tmp_dir)
+
     started = time.time()
-    result = subprocess.run([LOCAL_METAEDITOR, f"/compile:{source}", "/log"], capture_output=True, text=True, timeout=240)
+    result = subprocess.run([LOCAL_METAEDITOR, f"/compile:{tmp_mq5}", "/log"],
+                            capture_output=True, text=True, timeout=240)
+
+    # Wait up to 15s for EX5 to appear in temp dir
     deadline = time.time() + 15
     while time.time() < deadline:
-        if os.path.exists(ex5) and os.path.getmtime(ex5) >= started:
+        if os.path.exists(tmp_ex5) and os.path.getmtime(tmp_ex5) >= started:
             break
         time.sleep(0.5)
+
     log_text = ""
-    if os.path.exists(log):
+    if os.path.exists(tmp_log):
         try:
-            with open(log, "r", encoding="utf-16", errors="ignore") as f:
+            with open(tmp_log, "r", encoding="utf-16", errors="ignore") as f:
                 log_text = f.read()
         except Exception:
             log_text = ""
+
     log_ok = "Result: 0 errors" in log_text
-    if not log_ok or not os.path.exists(ex5) or os.path.getmtime(ex5) < started - 2:
-        print("\n🚫 本地 EA 编译失败或 EX5 未刷新，停止部署以避免远端跑旧二进制。")
+    if not log_ok or not os.path.exists(tmp_ex5) or os.path.getmtime(tmp_ex5) < started - 2:
+        print("\n[ERROR] Local EA compile failed or EX5 not refreshed. Stopping deploy to avoid running stale binary.")
         if log_text:
             print("".join(log_text.splitlines(keepends=True)[-80:]))
         print(result.stderr)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         exit(1)
-    print(f"   --> 本地 EA 编译完成: {ex5}")
+
+    # Copy EX5 back to source dir
+    shutil.copy2(tmp_ex5, ex5)
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    import hashlib
+    with open(ex5, "rb") as f:
+        md5 = hashlib.md5(f.read()).hexdigest().upper()
+    print(f"   --> [COMPILE] Local EA compiled OK: {ex5} (MD5={md5})")
 # ================= 5. 核心工具函数 (🌟 修复编码问题) =================
 def run2(cmd):
     """执行 Shell 命令，强制使用 utf-8 编码，防止 Windows GBK 报错"""
@@ -367,8 +401,13 @@ if __name__ == "__main__":
     print("   --> 项目文件部署完毕。")
 
     # --- C. 容器清理与编译 ---
-    print("\n🧹 [CLEAN] 正在清理旧的 MT5 进程...")
+    print("\n🧹 [CLEAN] Killing old MT5 processes (terminal64 + metatester64)...")
+    # Kill terminal64.exe first (Strategy Tester controller)
     subprocess.run(f'ssh -n {SSH_OPTS} {SERVER} "podman exec {CONTAINER_NAME} pkill -f terminal64.exe || true"', shell=True, timeout=60)
+    # Kill metatester64.exe (local tester agent) to flush its in-memory EX5 cache.
+    # Without this, the agent retains the old EX5 even after the file is replaced on disk.
+    subprocess.run(f'ssh -n {SSH_OPTS} {SERVER} "podman exec {CONTAINER_NAME} pkill -f metatester64.exe || true"', shell=True, timeout=60)
+    time.sleep(3)  # Wait for the agent process to fully exit before compile/deploy
 
     if os.environ.get("MT5_SKIP_REMOTE_COMPILE", "0") == "1":
         print("\n🛠️ [STEP 3] 跳过容器内 MetaEditor 编译，使用已部署 EX5。")
