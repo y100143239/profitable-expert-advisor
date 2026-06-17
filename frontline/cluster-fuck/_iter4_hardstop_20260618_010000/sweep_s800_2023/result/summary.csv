@@ -1,0 +1,57 @@
+Section,Key,Value
+Setup,Expert,ea
+Setup,Symbol,XAUUSD
+Setup,Period,H1 (2023.01.01 - 2024.01.01)
+Setup,Company,Raw Trading Ltd
+Setup,Currency,USD
+Setup,Initial Deposit,3 000.00
+Setup,Leverage,1:1000
+Setup,_title,Strategy Tester Report
+Statistics,Initial Deposit,3 000.00
+Statistics,Leverage,1:1000
+Statistics,History Quality,97% real ticks
+Statistics,Bars,5894
+Statistics,Ticks,23422797
+Statistics,Symbols,1
+Statistics,Total Net Profit,-628.47
+Statistics,Balance Drawdown Absolute,662.56
+Statistics,Equity Drawdown Absolute,685.77
+Statistics,Gross Profit,378.95
+Statistics,Balance Drawdown Maximal,896.79 (27.73%)
+Statistics,Equity Drawdown Maximal,920.06 (28.45%)
+Statistics,Gross Loss,-1 007.42
+Statistics,Balance Drawdown Relative,27.73% (896.79)
+Statistics,Equity Drawdown Relative,28.45% (920.06)
+Statistics,Profit Factor,0.38
+Statistics,Expected Payoff,-3.38
+Statistics,Margin Level,6396.47%
+Statistics,Recovery Factor,-0.68
+Statistics,Sharpe Ratio,-5.00
+Statistics,Z-Score,1.06 (71.09%)
+Statistics,AHPR,0.9990 (-0.10%)
+Statistics,LR Correlation,-0.54
+Statistics,OnTester result,0
+Statistics,GHPR,0.9987 (-0.13%)
+Statistics,LR Standard Error,254.54
+Statistics,Total Trades,186
+Statistics,Short Trades (won %),69 (81.16%)
+Statistics,Long Trades (won %),117 (82.91%)
+Statistics,Total Deals,372
+Statistics,Profit Trades (% of total),153 (82.26%)
+Statistics,Loss Trades (% of total),33 (17.74%)
+Statistics,Largest profit trade,35.73
+Statistics,Largest loss trade,-815.79
+Statistics,Average profit trade,2.48
+Statistics,Average loss trade,-29.73
+Statistics,Maximum consecutive wins ($),27 (108.48)
+Statistics,Maximum consecutive losses ($),2 (-816.02)
+Statistics,Maximal consecutive profit (count),108.48 (27)
+Statistics,Maximal consecutive loss (count),-816.02 (2)
+Statistics,Average consecutive wins,5
+Statistics,Average consecutive losses,1
+Statistics,"Correlation (Profits,MFE)",0.08
+Statistics,"Correlation (Profits,MAE)",0.91
+Statistics,"Correlation (MFE,MAE)",-0.0974
+Statistics,Minimal position holding time,0:00:17
+Statistics,Maximal position holding time,38:27:54
+Statistics,Average position holding time,1:35:54
