@@ -9,7 +9,7 @@
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
-#include "../_united/MagicNumberHelpers.mqh"
+#include "../MagicNumberHelpers.mqh"
 
 // Input Parameters
 input group "General Settings"

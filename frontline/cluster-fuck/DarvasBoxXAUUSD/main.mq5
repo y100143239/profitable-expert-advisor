@@ -11,7 +11,7 @@
 #include <Trade\Trade.mqh>
 #include <Indicators\Trend.mqh>
 #include <Indicators\Volumes.mqh>
-#include "../_united/MagicNumberHelpers.mqh"
+#include "../MagicNumberHelpers.mqh"
 
 // Input parameters
 input int    BoxPeriod = 165;        // Period for Darvas Box calculation

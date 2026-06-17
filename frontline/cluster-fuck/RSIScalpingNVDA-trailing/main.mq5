@@ -8,7 +8,7 @@
 #property version   "1.01"
 
 #include <Trade\Trade.mqh>
-#include "../_united/MagicNumberHelpers.mqh"
+#include "../MagicNumberHelpers.mqh"
 
 //--- Input parameters
 input ENUM_TIMEFRAMES      TimeFrame = PERIOD_M15; // Timeframe for Analysis

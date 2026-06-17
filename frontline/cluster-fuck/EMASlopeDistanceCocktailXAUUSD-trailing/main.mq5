@@ -7,7 +7,7 @@
 #property link      "https://www.mql5.com"
 #property version   "1.01"
 #include <Trade\Trade.mqh>
-#include "../_united/MagicNumberHelpers.mqh"
+#include "../MagicNumberHelpers.mqh"
 //--- Eingabeparameter (Input Parameters) - Optimized Profitable Parameters
 input int    EMA_Periode = 50;           // EMA Periode
 input double PreisSchwelle = 700.0;       // Preisbewegung Schwelle in Pips

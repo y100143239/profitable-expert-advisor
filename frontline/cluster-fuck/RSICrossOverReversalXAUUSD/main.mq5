@@ -1,6 +1,6 @@
 // Input Parameters
 #include <Trade\Trade.mqh>
-#include "../_united/MagicNumberHelpers.mqh"
+#include "../MagicNumberHelpers.mqh"
 
 input group "Trade Management"
 input int MagicNumber = 7;

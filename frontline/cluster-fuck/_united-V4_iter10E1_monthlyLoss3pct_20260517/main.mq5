@@ -380,11 +380,16 @@ bool United_CurrentMonthIsBlocked()
       return false;
    MqlDateTime dt;
    TimeToStruct(TimeCurrent(), dt);
+   string current = StringFormat("%04d-%02d", dt.year, dt.mon);
+   string compact = StringFormat("%04d%02d", dt.year, dt.mon);
    string parts[];
    int n = StringSplit(GRM_BlockEntryMonths, ',', parts);
    for(int i = 0; i < n; i++)
    {
-      if((int)StringToInteger(parts[i]) == dt.mon)
+      string token = parts[i];
+      StringTrimLeft(token);
+      StringTrimRight(token);
+      if(token == current || token == compact || (int)StringToInteger(token) == dt.mon)
          return true;
    }
    return false;
