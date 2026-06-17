@@ -862,10 +862,6 @@ bool United_TrendAlignmentBlocksEntry(const string symbol, const bool isBuy)
 
 bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const bool isBuy)
 {
-   // Portfolio Equity Stop cooldown blocks ALL new entries (applies even if GRM off).
-   if(United_PortfolioEquityStopInCooldown())
-      return false;
-
    if(!GRM_Enable)
       return true;
 
@@ -1045,25 +1041,12 @@ input double ORCH_MaxBalanceScale = 10.0;
 //+------------------------------------------------------------------+
 input group "=== Unified Risk Facade (Phase 1) ==="
 input bool   URF_Enable             = true;   // master switch (false = legacy DD-only scale)
-input double URF_BaseScale          = 2.5;    // flat lot multiplier (sweep DOWN to cut DD)
 input double URF_MaxMarginLoadPct   = 25.0;   // cap used-margin / equity (%)
 input double URF_MinMarginLevelPct  = 300.0;  // floor equity / used-margin * 100 (%)
-input double URF_SoftBreakerDDPct   = 8.0;    // equity DD from peak to begin throttling (%)
-input double URF_HardBreakerDDPct   = 20.0;   // equity DD from peak -> near-zero new exposure (%)
+input double URF_SoftBreakerDDPct   = 3.0;    // equity DD from peak to begin throttling (%)
+input double URF_HardBreakerDDPct   = 18.0;   // equity DD from peak -> near-zero new exposure (%)
+input double URF_MaxScaleUp         = 1.6;    // max lot scale-up when very safe (was 2.5 blind)
 input double URF_MinScale           = 0.05;   // never fully zero new exposure
-
-//+------------------------------------------------------------------+
-//| Portfolio Equity Stop (Phase 1b) — the real equity-DD gate       |
-//| Throttling lot size only fixes margin/liquidation risk; the      |
-//| equity drawdown is driven by FLOATING losses on open positions.  |
-//| This breaker CLOSES all EA positions when the equity drawdown    |
-//| from the running peak exceeds a threshold, then pauses new        |
-//| entries for a cooldown, capping the maximum equity excursion.    |
-//+------------------------------------------------------------------+
-input group "=== Portfolio Equity Stop (Phase 1b) ==="
-input bool   PES_Enable             = true;   // master switch
-input double PES_TriggerDDPct       = 12.0;   // close-all when equity DD from peak >= this (%)
-input int    PES_CooldownMin        = 720;    // pause new entries this many minutes after a stop
 
 //+------------------------------------------------------------------+
 //| Strategy 1: DarvasBoxXAUUSD                                      |
@@ -1594,7 +1577,6 @@ int g_NumSymbolRegimes = 0;
 //--- Performance caching to avoid per-tick HistorySelect overhead ---
 double g_CachedMarginScale = 1.0;
 double g_EquityPeak = 0.0;   // running equity high-water mark for the URF drawdown breaker
-datetime g_PESCooldownUntil = 0;   // Portfolio Equity Stop: block new entries until this time
 
 struct StrategyPerfCache {
    ulong magic;
@@ -1822,74 +1804,49 @@ double United_RiskFacadeScale()
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    double margin = AccountInfoDouble(ACCOUNT_MARGIN);
 
-   // Flat base multiplier (replaces the blind 2.5x). Profit and drawdown scale
-   // ~proportionally with URF_BaseScale, so it is a clean single dial to sweep.
-   double scale = URF_BaseScale;
+   // running equity high-water mark
+   if(equity > g_EquityPeak) g_EquityPeak = equity;
+   double ddFromPeak = (g_EquityPeak > 0.0) ? (g_EquityPeak - equity) / g_EquityPeak * 100.0 : 0.0;
+   if(ddFromPeak < 0.0) ddFromPeak = 0.0;
 
+   // current margin metrics (no positions => infinitely safe)
    double level   = (margin > 0.0) ? equity / margin * 100.0 : 1.0e9;
    double loadPct = (equity > 0.0 && margin > 0.0) ? margin / equity * 100.0 : 0.0;
 
-   // A. Hard margin-load cap: never let used-margin / equity exceed the cap.
-   if(loadPct > URF_MaxMarginLoadPct)
-      scale = MathMin(scale, URF_BaseScale * URF_MaxMarginLoadPct / MathMax(loadPct, 0.01));
+   double scale = 1.0;
 
-   // B. Hard margin-level floor: linearly throttle NEW exposure to zero only in a
-   //    tight safety band just above the 300% floor. Inactive in normal operation;
-   //    this is the no-liquidation guarantee, not a profit throttle.
-   double floorBand = URF_MinMarginLevelPct * 1.10;
+   // A. Reward only genuinely safe states with a modest scale-up
+   //    (high margin level, low load, no drawdown).
+   if(level > 3.0 * URF_MinMarginLevelPct
+      && loadPct < URF_MaxMarginLoadPct * 0.5
+      && ddFromPeak < URF_SoftBreakerDDPct)
+      scale = URF_MaxScaleUp;
+
+   // B. Margin-load cap: keep used-margin / equity <= URF_MaxMarginLoadPct.
+   if(loadPct > URF_MaxMarginLoadPct)
+      scale = MathMin(scale, URF_MaxMarginLoadPct / MathMax(loadPct, 0.01));
+
+   // C. Margin-level floor: throttle new exposure as level approaches the
+   //    300% floor (zero new exposure at/below the floor).
+   double floorBand = URF_MinMarginLevelPct * 1.5;
    if(level < floorBand)
    {
       double f = (level - URF_MinMarginLevelPct) / MathMax(floorBand - URF_MinMarginLevelPct, 0.01);
-      scale = MathMin(scale, URF_BaseScale * MathMax(0.0, f));
+      scale = MathMin(scale, MathMax(0.0, f));
    }
 
-   if(scale > URF_BaseScale) scale = URF_BaseScale;
-   if(scale < URF_MinScale)  scale = URF_MinScale;
-   return scale;
-}
-
-//+------------------------------------------------------------------+
-//| Portfolio Equity Stop: close all EA positions on deep equity     |
-//| drawdown from the running peak, then start a cooldown. Returns    |
-//| true if a stop was triggered this tick.                          |
-//+------------------------------------------------------------------+
-bool United_PortfolioEquityStop()
-{
-   if(!PES_Enable)
-      return false;
-
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   if(equity > g_EquityPeak) g_EquityPeak = equity;
-   if(g_EquityPeak <= 0.0)
-      return false;
-
-   double ddFromPeak = (g_EquityPeak - equity) / g_EquityPeak * 100.0;
-   if(ddFromPeak < PES_TriggerDDPct)
-      return false;
-
-   // Flatten every EA-owned position (known magics only).
-   CTrade pesTrade;
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   // D. Equity-peak drawdown breaker: linear throttle from soft to hard DD.
+   if(ddFromPeak > URF_SoftBreakerDDPct)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket == 0) continue;
-      if(!PositionSelectByTicket(ticket)) continue;
-      if(!United_IsKnownV4Magic((ulong)PositionGetInteger(POSITION_MAGIC))) continue;
-      pesTrade.PositionClose(ticket);
+      double t = (ddFromPeak - URF_SoftBreakerDDPct)
+               / MathMax(URF_HardBreakerDDPct - URF_SoftBreakerDDPct, 0.01);
+      t = MathMin(MathMax(t, 0.0), 1.0);
+      scale = MathMin(scale, 1.0 - t);
    }
 
-   // Reset peak to the post-stop equity so the next trigger measures a fresh
-   // drawdown, and pause new entries for the cooldown.
-   g_EquityPeak = AccountInfoDouble(ACCOUNT_EQUITY);
-   g_PESCooldownUntil = TimeCurrent() + (datetime)PES_CooldownMin * 60;
-   if(GRM_DebugLogs)
-      PrintFormat("[PES] equity stop at DD %.2f%% -> flattened, cooldown %d min", ddFromPeak, PES_CooldownMin);
-   return true;
-}
-
-bool United_PortfolioEquityStopInCooldown()
-{
-   return (PES_Enable && g_PESCooldownUntil > 0 && TimeCurrent() < g_PESCooldownUntil);
+   if(scale > URF_MaxScaleUp) scale = URF_MaxScaleUp;
+   if(scale < URF_MinScale)   scale = URF_MinScale;
+   return scale;
 }
 
 void DeinitSymbolRegimes()
@@ -2535,9 +2492,6 @@ void OnTick()
 {
    // Refresh cached values (margin scale per tick, perf multipliers hourly)
    g_CachedMarginScale = URF_Enable ? United_RiskFacadeScale() : United_DynamicMarginScale();
-
-   // Portfolio equity stop: flatten + cooldown on deep equity drawdown.
-   United_PortfolioEquityStop();
    United_RefreshPerformanceCache();
    United_RefreshScaledLots();
 
