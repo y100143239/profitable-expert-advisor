@@ -1,7 +1,3 @@
-# Compiled MQL5 binaries (not source)
-*.ex5
-*.ex4
-
 # Backtest report history and logs
 frontline/cluster-fuck/report_history/
 frontline/v4_archived_*.log
