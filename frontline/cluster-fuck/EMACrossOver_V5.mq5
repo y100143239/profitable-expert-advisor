@@ -20,6 +20,11 @@ input ENUM_TIMEFRAMES TrendTF  = PERIOD_D1;
 input int    TrendMAPeriod     = 100;      // D1 trend EMA
 input int    TrendSlopeBars    = 5;        // Slope confirmation window
 
+// ---- ADX momentum filter (trade only strong trends) ----
+input bool   UseADXFilter      = true;     // Require ADX above threshold
+input int    ADXPeriod         = 14;
+input double ADXMinLevel       = 22.0;     // Min ADX to allow entries
+
 // ---- Risk / exits ----
 input double RiskPercent       = 1.0;      // % equity risked per trade
 input int    ATRPeriod         = 14;
@@ -40,7 +45,7 @@ input double MinLot              = 0.01;
 input double MaxLot              = 50.0;
 input bool   UseSwapManagement   = true;   // Close profitable pos before swap
 
-int    emaFastHandle, emaSlowHandle, trendHandle, atrHandle;
+int    emaFastHandle, emaSlowHandle, trendHandle, atrHandle, adxHandle;
 CTrade trade;
 datetime lastTradeTime = 0;
 datetime lastEquityStop = 0;
@@ -50,8 +55,9 @@ int OnInit() {
     emaSlowHandle = iMA(Symbol(), emaTimeFrame, emaSlowPeriod, 0, MODE_EMA, PRICE_CLOSE);
     trendHandle   = iMA(Symbol(), TrendTF, TrendMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
     atrHandle     = iATR(Symbol(), emaTimeFrame, ATRPeriod);
+    adxHandle     = iADX(Symbol(), emaTimeFrame, ADXPeriod);
     if (emaFastHandle==INVALID_HANDLE || emaSlowHandle==INVALID_HANDLE ||
-        trendHandle==INVALID_HANDLE || atrHandle==INVALID_HANDLE) {
+        trendHandle==INVALID_HANDLE || atrHandle==INVALID_HANDLE || adxHandle==INVALID_HANDLE) {
         Print("Indicator init failed"); return INIT_FAILED;
     }
     return INIT_SUCCEEDED;
@@ -62,6 +68,14 @@ void OnDeinit(const int reason) {
     IndicatorRelease(emaSlowHandle);
     IndicatorRelease(trendHandle);
     IndicatorRelease(atrHandle);
+    IndicatorRelease(adxHandle);
+}
+
+bool ADXPasses() {
+    if (!UseADXFilter) return true;
+    double a[];
+    if (CopyBuffer(adxHandle, 0, 0, 1, a) < 1) return false;  // buffer 0 = main ADX line
+    return a[0] >= ADXMinLevel;
 }
 
 //+------------------------------------------------------------------+
@@ -142,6 +156,7 @@ void OnTick() {
     int trend = UseTrendFilter ? GetTrend() : 0;
     double atr = GetATR();
     if (atr <= 0) return;
+    if (!ADXPasses()) return;   // momentum gate
     double ask = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
     double bid = SymbolInfoDouble(Symbol(), SYMBOL_BID);
     double sl = atr * ATR_SL_Mult;
