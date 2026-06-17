@@ -42,6 +42,16 @@ XAUUSD / EURUSD / AUDUSD / BTCUSD / AAPL.NAS / NVDA.NAS / TSLA.NAS / MU.NAS / DE
   `United_DynamicMarginScale()` at the single lot-sizing chokepoint (`g_CachedMarginScale`).
 - **`United_PortfolioEquityStop()`** + cooldown — closes all EA positions on deep equity drawdown
   from the running peak, then pauses entries (`PES_*` inputs). Available but off by default.
+- **`United_MarketSessionOpen()`** (Phase 3) — `SymbolInfoSessionTrade()`-based session gate.
+  Scoped via `SessGate_SymbolContains` (default `.NAS,DE40`) so it only blocks entries on
+  stock/index symbols that actually close (stops retcode-10018 "market closed" spam) and leaves
+  the 24h XAU/FX/crypto engine untouched. **On by default; verified profit-neutral**
+  (+$48,618 / DD 19.57% vs the +$48,434 / DD 19.66% champion).
+- **`United_NewsGuardBlocksEntry()`** (Phase 3) — tester-safe date-table block around NFP
+  (first Friday) / CPI (~day 12) / FOMC (~day 18) via `NewsGuard_*`. **Off by default** (opt-in).
+- **`United_SwapAwareClose()`** (Phase 3) — near rollover, closes marginal/small-profit positions
+  on negative-swap symbols to cut overnight cost, keeping strong winners. `SwapClose_*`.
+  **Off by default** (opt-in).
 
 ## How to reproduce
 
@@ -84,3 +94,6 @@ python frontline/cluster-fuck/v4opt/run_v4.py --tag champ_repro \
 2. **News guard** (NFP/CPI/FOMC) and **swap-aware close-before-rollover** — profit-neutral
    cleanups aligned with the original requirements.
 3. **Per-strategy regime work** to lift 2023 and the win rate toward 50%.
+
+**Status:** items 1 and 2 are now implemented (session gate on + scoped, news guard + swap-aware
+close opt-in/off). Item 3 (deeper 2023 / win-rate regime work) remains the open robustness task.
