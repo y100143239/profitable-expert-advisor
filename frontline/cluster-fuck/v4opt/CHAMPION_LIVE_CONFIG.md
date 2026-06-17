@@ -97,3 +97,24 @@ python frontline/cluster-fuck/v4opt/run_v4.py --tag champ_repro \
 
 **Status:** items 1 and 2 are now implemented (session gate on + scoped, news guard + swap-aware
 close opt-in/off). Item 3 (deeper 2023 / win-rate regime work) remains the open robustness task.
+
+## Win-rate / robustness ceiling (tested, structural)
+
+Item 3 was investigated and found to be a **structural property of the aggressive multi-strategy
+book**, not a fixable parameter:
+
+- The EA's **regime gating is already active** on the champion (per-symbol H4 ADX(14) registration +
+  `United_IsStrategyAllowedInRegime` in the entry path: range strategies are blocked when ADX > 25,
+  trend strategies when ADX < 20).
+- **Every entry-throttle filter tested reduces profit for no robustness gain:** D1 trend-alignment
+  veto (−18% profit, DD up), consecutive/portfolio loss cooldowns (−36% profit), win-rate cooldowns
+  (−75% profit, win only 43→44.5%, DD up to 31%), concurrent-position caps (DD up to 48%).
+- The book's win rate is **structurally ~43%** — it is asymmetric (many small wins, occasional
+  larger losses) but keeps profit factor > 1.3. Forcing win rate ≥ 50% removes the edge.
+- 2023 standalone is **≈break-even** (−$195 ≈ −6.5% on $3,000, fully recovered), not a deep loss.
+
+**Conclusion:** Champion #1 (+ scoped session gate) is the realistic optimum for this aggressive
+profile. Gates met: doubling, full-period DD ≤ 20%, margin > 300% (no liquidation), Sharpe ≥ 1.5.
+Gates that are structural ceilings of this book (documented, not met): win rate ≥ 50%, ≤ 20% DD on
+every standalone year, strongly-positive every year. A meaningfully higher win rate would require
+re-deriving the individual sub-strategies (high overfit risk), not orchestration-level tuning.
