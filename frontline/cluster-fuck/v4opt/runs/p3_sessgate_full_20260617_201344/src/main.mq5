@@ -868,10 +868,7 @@ bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const 
 
    // Session gate: do not attempt entries when the symbol's market is closed
    // (stocks/.NAS, DE40 overnight/weekend) -> avoids retcode 10018 spam.
-   // Scoped to SessGate_SymbolContains so 24h FX/metal/crypto are unaffected.
-   if(SessGate_Enable
-      && (SessGate_SymbolContains == "" || United_SymbolContainsAny(symbol, SessGate_SymbolContains))
-      && !United_MarketSessionOpen(symbol))
+   if(SessGate_Enable && !United_MarketSessionOpen(symbol))
       return false;
 
    // News guard: block entries around high-impact USD events when enabled.
@@ -1089,7 +1086,6 @@ input int    PES_CooldownMin        = 720;    // pause new entries this many min
 //+------------------------------------------------------------------+
 input group "=== Session & News Guards (Phase 3) ==="
 input bool   SessGate_Enable        = true;   // skip entries when symbol session is closed
-input string SessGate_SymbolContains = ".NAS,DE40"; // only gate these (stocks/index); empty = all
 input bool   NewsGuard_Enable       = false;  // block entries around high-impact USD events
 input string NewsGuard_SymbolContains = "XAUUSD,EURUSD,USD"; // which symbols the guard applies to
 input int    NewsGuard_BeforeMin    = 30;     // block this many minutes before an event
