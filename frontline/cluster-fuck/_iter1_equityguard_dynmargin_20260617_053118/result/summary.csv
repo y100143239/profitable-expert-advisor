@@ -1,0 +1,57 @@
+Section,Key,Value
+Setup,Expert,EMACrossOver_V1
+Setup,Symbol,XAUUSD
+Setup,Period,H1 (2023.01.01 - 2026.06.17)
+Setup,Company,Raw Trading Ltd
+Setup,Currency,USD
+Setup,Initial Deposit,3 000.00
+Setup,Leverage,1:1000
+Setup,_title,Strategy Tester Report
+Statistics,Initial Deposit,3 000.00
+Statistics,Leverage,1:1000
+Statistics,History Quality,99% real ticks
+Statistics,Bars,20430
+Statistics,Ticks,351609820
+Statistics,Symbols,1
+Statistics,Total Net Profit,-1 167.83
+Statistics,Balance Drawdown Absolute,2 025.69
+Statistics,Equity Drawdown Absolute,2 050.05
+Statistics,Gross Profit,4 962.25
+Statistics,Balance Drawdown Maximal,2 071.88 (68.02%)
+Statistics,Equity Drawdown Maximal,2 115.08 (69.01%)
+Statistics,Gross Loss,-6 130.08
+Statistics,Balance Drawdown Relative,68.02% (2 071.88)
+Statistics,Equity Drawdown Relative,69.01% (2 115.08)
+Statistics,Profit Factor,0.81
+Statistics,Expected Payoff,-0.33
+Statistics,Margin Level,1285.98%
+Statistics,Recovery Factor,-0.55
+Statistics,Sharpe Ratio,-1.37
+Statistics,Z-Score,-0.83 (59.35%)
+Statistics,AHPR,0.9999 (-0.01%)
+Statistics,LR Correlation,-0.72
+Statistics,OnTester result,0
+Statistics,GHPR,0.9999 (-0.01%)
+Statistics,LR Standard Error,236.64
+Statistics,Total Trades,3529
+Statistics,Short Trades (won %),1367 (75.27%)
+Statistics,Long Trades (won %),2162 (78.95%)
+Statistics,Total Deals,7058
+Statistics,Profit Trades (% of total),2736 (77.53%)
+Statistics,Loss Trades (% of total),793 (22.47%)
+Statistics,Largest profit trade,102.67
+Statistics,Largest loss trade,-651.81
+Statistics,Average profit trade,1.81
+Statistics,Average loss trade,-7.41
+Statistics,Maximum consecutive wins ($),28 (17.75)
+Statistics,Maximum consecutive losses ($),6 (-0.47)
+Statistics,Maximal consecutive profit (count),126.08 (13)
+Statistics,Maximal consecutive loss (count),-651.81 (1)
+Statistics,Average consecutive wins,5
+Statistics,Average consecutive losses,1
+Statistics,"Correlation (Profits,MFE)",0.20
+Statistics,"Correlation (Profits,MAE)",0.77
+Statistics,"Correlation (MFE,MAE)",-0.1897
+Statistics,Minimal position holding time,0:00:01
+Statistics,Maximal position holding time,43:35:43
+Statistics,Average position holding time,0:33:35
