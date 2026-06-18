@@ -1,0 +1,57 @@
+Section,Key,Value
+Setup,Expert,main
+Setup,Symbol,EURUSD
+Setup,Period,H1 (2025.01.01 - 2025.12.31)
+Setup,Company,Raw Trading Ltd
+Setup,Currency,USD
+Setup,Initial Deposit,3 000.00
+Setup,Leverage,1:1000
+Setup,_title,Strategy Tester Report
+Statistics,Initial Deposit,3 000.00
+Statistics,Leverage,1:1000
+Statistics,History Quality,100% real ticks
+Statistics,Bars,6192
+Statistics,Ticks,46006031
+Statistics,Symbols,12
+Statistics,Total Net Profit,17 782.75
+Statistics,Balance Drawdown Absolute,748.41
+Statistics,Equity Drawdown Absolute,820.92
+Statistics,Gross Profit,55 389.42
+Statistics,Balance Drawdown Maximal,6 142.21 (32.92%)
+Statistics,Equity Drawdown Maximal,7 100.23 (33.42%)
+Statistics,Gross Loss,-37 606.67
+Statistics,Balance Drawdown Relative,39.23% (1 689.73)
+Statistics,Equity Drawdown Relative,44.16% (2 770.71)
+Statistics,Profit Factor,1.47
+Statistics,Expected Payoff,13.62
+Statistics,Margin Level,246.60%
+Statistics,Recovery Factor,2.50
+Statistics,Sharpe Ratio,2.10
+Statistics,Z-Score,-0.91 (63.72%)
+Statistics,AHPR,1.0024 (0.24%)
+Statistics,LR Correlation,0.69
+Statistics,OnTester result,0
+Statistics,GHPR,1.0015 (0.15%)
+Statistics,LR Standard Error,2 856.47
+Statistics,Total Trades,1306
+Statistics,Short Trades (won %),458 (39.74%)
+Statistics,Long Trades (won %),848 (42.22%)
+Statistics,Total Deals,2612
+Statistics,Profit Trades (% of total),540 (41.35%)
+Statistics,Loss Trades (% of total),766 (58.65%)
+Statistics,Largest profit trade,8 266.22
+Statistics,Largest loss trade,-2 421.63
+Statistics,Average profit trade,102.57
+Statistics,Average loss trade,-48.47
+Statistics,Maximum consecutive wins ($),9 (478.59)
+Statistics,Maximum consecutive losses ($),14 (-384.71)
+Statistics,Maximal consecutive profit (count),8 266.22 (1)
+Statistics,Maximal consecutive loss (count),-3 535.56 (8)
+Statistics,Average consecutive wins,2
+Statistics,Average consecutive losses,2
+Statistics,"Correlation (Profits,MFE)",0.84
+Statistics,"Correlation (Profits,MAE)",0.30
+Statistics,"Correlation (MFE,MAE)",-0.1509
+Statistics,Minimal position holding time,0:00:10
+Statistics,Maximal position holding time,1061:58:59
+Statistics,Average position holding time,7:56:35
