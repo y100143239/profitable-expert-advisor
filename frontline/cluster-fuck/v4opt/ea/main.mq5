@@ -126,6 +126,15 @@ input double GRM_TrendAlignMinDistanceATR = 0.0;
 // these magics (CSV). Use to scope it to trend-followers and exempt mean-
 // reversion scalpers that intentionally take quick counter-trend trades.
 input string GRM_TrendAlignMagics = "";
+// --- Regime Quick-Exit (RQE): timely stop for COUNTER-TREND open positions. ---
+// Surgical exit-side discipline (强市短空 / 弱市短多): when a position is held
+// against the D1 regime (same MA/slope test as the trend-align entry filter)
+// AND its adverse excursion exceeds RQE_AdverseATRMult * ATR, close it early to
+// cap runaway losses. With-trend positions are never touched. Default OFF
+// (opt-in until validated). Reuses the GRM_TrendAlign* regime parameters.
+input bool   RQE_Enable = true;
+input string RQE_Magics = "";            // CSV scope; "" = all known V4 magics
+input double RQE_AdverseATRMult = 0.25;  // close when underwater >= this * D1 ATR
 input bool   GRM_ConsecutiveLossCooldownEnable = false;
 input int    GRM_ConsecutiveLossCount = 3;
 input int    GRM_ConsecutiveLossLookbackDays = 30;
@@ -869,6 +878,91 @@ bool United_TrendAlignmentBlocksEntry(const string symbol, const ulong magic, co
    if(isBuy)
       return (close < ma[0] && slopePct <= -GRM_TrendAlignMinSlopePct);
    return (close > ma[0] && slopePct >= GRM_TrendAlignMinSlopePct);
+}
+
+//+------------------------------------------------------------------+
+//| Regime direction from the same D1 MA/slope test used by the      |
+//| trend-align entry filter. Returns +1 uptrend, -1 downtrend,      |
+//| 0 range/undetermined. Used by the regime quick-exit guard.       |
+//+------------------------------------------------------------------+
+int United_TrendRegimeDir(const string symbol)
+{
+   if(GRM_TrendAlignMAPeriod <= 1 || GRM_TrendAlignSlopeLookback <= 0)
+      return 0;
+
+   int maHandle = iMA(symbol, GRM_TrendAlignTimeframe, GRM_TrendAlignMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   if(maHandle == INVALID_HANDLE)
+      return 0;
+
+   double ma[];
+   ArraySetAsSeries(ma, true);
+   bool ok = (CopyBuffer(maHandle, 0, 1, GRM_TrendAlignSlopeLookback + 1, ma) == GRM_TrendAlignSlopeLookback + 1);
+   IndicatorRelease(maHandle);
+   if(!ok)
+      return 0;
+
+   double close = iClose(symbol, GRM_TrendAlignTimeframe, 1);
+   if(close <= 0.0 || ma[0] <= 0.0 || ma[GRM_TrendAlignSlopeLookback] <= 0.0)
+      return 0;
+
+   double slopePct = (ma[0] - ma[GRM_TrendAlignSlopeLookback]) / ma[GRM_TrendAlignSlopeLookback] * 100.0;
+   if(close > ma[0] && slopePct >= GRM_TrendAlignMinSlopePct)
+      return 1;
+   if(close < ma[0] && slopePct <= -GRM_TrendAlignMinSlopePct)
+      return -1;
+   return 0;
+}
+
+//+------------------------------------------------------------------+
+//| Regime quick-exit: close any EA position held COUNTER to the D1   |
+//| regime once its adverse excursion exceeds RQE_AdverseATRMult*ATR. |
+//| With-trend and range-regime positions are left untouched. This is |
+//| a surgical loss-cap on the exact judgement errors (counter-trend  |
+//| runaways) that depress win-rate, without disabling any strategy.  |
+//+------------------------------------------------------------------+
+void United_RegimeQuickExit()
+{
+   if(!RQE_Enable || RQE_AdverseATRMult <= 0.0) return;
+
+   CTrade rqeTrade;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket)) continue;
+      ulong magic = (ulong)PositionGetInteger(POSITION_MAGIC);
+      if(!United_IsKnownV4Magic(magic)) continue;
+      if(RQE_Magics != "" && !United_MagicIsInCsv(magic, RQE_Magics)) continue;
+
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      int dir = United_TrendRegimeDir(symbol);
+      if(dir == 0) continue;  // range / undetermined -> leave alone
+
+      bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      bool counterTrend = (dir > 0 && !isBuy) || (dir < 0 && isBuy);
+      if(!counterTrend) continue;  // with-trend -> let it run
+
+      double openPx = PositionGetDouble(POSITION_PRICE_OPEN);
+      double curPx  = isBuy ? SymbolInfoDouble(symbol, SYMBOL_BID)
+                            : SymbolInfoDouble(symbol, SYMBOL_ASK);
+      if(openPx <= 0.0 || curPx <= 0.0) continue;
+      double adverse = isBuy ? (openPx - curPx) : (curPx - openPx);
+      if(adverse <= 0.0) continue;  // not underwater
+
+      int atrHandle = iATR(symbol, GRM_TrendAlignTimeframe, GRM_TrendAlignATRPeriod);
+      if(atrHandle == INVALID_HANDLE) continue;
+      double atr[];
+      ArraySetAsSeries(atr, true);
+      bool atrOk = (CopyBuffer(atrHandle, 0, 1, 1, atr) == 1);
+      IndicatorRelease(atrHandle);
+      if(!atrOk || atr[0] <= 0.0) continue;
+
+      if(adverse >= RQE_AdverseATRMult * atr[0])
+      {
+         PrintFormat("[REGIME QUICK-EXIT] closing %s ticket %I64u magic=%I64u: counter-trend (regime %d) adverse %.5f >= %.2f*ATR(%.5f)",
+                     symbol, ticket, magic, dir, adverse, RQE_AdverseATRMult, atr[0]);
+         rqeTrade.PositionClose(ticket);
+      }
+   }
 }
 
 bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const bool isBuy)
@@ -2944,6 +3038,9 @@ void OnTick()
 
    // Real-time per-position floating-loss guard.
    United_RealtimePositionGuard();
+
+   // Regime quick-exit: cap counter-trend runaways (opt-in, default off).
+   United_RegimeQuickExit();
 
    // Swap-aware close near rollover (off by default).
    United_SwapAwareClose();
