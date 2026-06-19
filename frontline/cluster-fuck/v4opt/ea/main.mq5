@@ -99,6 +99,24 @@ input double GRM_MonthlyLossLimitFreeMarginPct = 3.0;
 // many hours then resume (within-month recovery), re-arming only if losses deepen
 // by another full threshold. Avoids the crude "no trading until next month" lockout.
 input double GRM_MonthlyLossCooldownHours = 0.0;
+// --- Virtual Recovery Probe (VRP): smart monthly-loss breaker recovery. ---
+// When the monthly-loss limit is hit, instead of a blunt month-lock or a fixed
+// timed cooldown, switch REAL trading off but keep "shadow" trading: every
+// would-be entry is recorded as a VIRTUAL position and resolved against a
+// short-horizon ATR take-profit / stop-loss. The EA monitors the virtual win
+// rate; once the simulated book shows the market has recovered (win rate >=
+// VRP_ResumeWinRate over >= VRP_ProbeTrades closed virtual trades, net non-
+// negative), REAL trading resumes (re-arming only if losses deepen another full
+// threshold). This recovers trading time on real signal-quality evidence rather
+// than a clock. Default OFF (opt-in until validated). Takes precedence over the
+// timed cooldown when enabled.
+input bool   VRP_Enable = false;
+input ENUM_TIMEFRAMES VRP_ATRTimeframe = PERIOD_H1;  // horizon for virtual TP/SL
+input int    VRP_ATRPeriod = 14;
+input double VRP_VirtualTPATR = 1.0;   // virtual take-profit in ATR
+input double VRP_VirtualSLATR = 1.0;   // virtual stop-loss in ATR
+input int    VRP_ProbeTrades = 8;      // min closed virtual trades before resume
+input double VRP_ResumeWinRate = 0.55; // resume real trading at/above this virtual win rate
 // Comma-separated months 1-12. Empty = disabled.
 input string GRM_BlockEntryMonths = "";
 // Comma-separated symbol fragments. Empty = all symbols in blocked months.
@@ -965,6 +983,121 @@ void United_RegimeQuickExit()
    }
 }
 
+//+------------------------------------------------------------------+
+//| Virtual Recovery Probe helpers. The shadow book records would-be |
+//| entries while the monthly-loss breaker is tripped, resolves them |
+//| against a short-horizon ATR TP/SL, and resumes REAL trading once |
+//| the simulated win rate shows the market has recovered.           |
+//+------------------------------------------------------------------+
+void United_VRPClearBook()
+{
+   ArrayResize(g_VRPSym, 0);
+   ArrayResize(g_VRPIsBuy, 0);
+   ArrayResize(g_VRPEntry, 0);
+   ArrayResize(g_VRPTP, 0);
+   ArrayResize(g_VRPSL, 0);
+}
+
+void United_VRPResetEpisode()
+{
+   g_VRPWins = 0;
+   g_VRPLosses = 0;
+   United_VRPClearBook();
+}
+
+// Record a would-be entry as a virtual position. Deduped by symbol+side so the
+// shadow book stays small and representative (one open probe per symbol/side).
+void United_VRPRecordVirtual(const string symbol, const bool isBuy)
+{
+   for(int i = 0; i < ArraySize(g_VRPSym); i++)
+      if(g_VRPSym[i] == symbol && g_VRPIsBuy[i] == isBuy)
+         return;  // already probing this symbol/side
+
+   double entry = SymbolInfoDouble(symbol, SYMBOL_BID);
+   if(entry <= 0.0) return;
+
+   int atrHandle = iATR(symbol, VRP_ATRTimeframe, VRP_ATRPeriod);
+   if(atrHandle == INVALID_HANDLE) return;
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   bool ok = (CopyBuffer(atrHandle, 0, 1, 1, atr) == 1);
+   IndicatorRelease(atrHandle);
+   if(!ok || atr[0] <= 0.0) return;
+
+   double tp = isBuy ? entry + VRP_VirtualTPATR * atr[0] : entry - VRP_VirtualTPATR * atr[0];
+   double sl = isBuy ? entry - VRP_VirtualSLATR * atr[0] : entry + VRP_VirtualSLATR * atr[0];
+
+   int n = ArraySize(g_VRPSym);
+   ArrayResize(g_VRPSym, n + 1);   g_VRPSym[n]   = symbol;
+   ArrayResize(g_VRPIsBuy, n + 1); g_VRPIsBuy[n] = isBuy;
+   ArrayResize(g_VRPEntry, n + 1); g_VRPEntry[n] = entry;
+   ArrayResize(g_VRPTP, n + 1);    g_VRPTP[n]    = tp;
+   ArrayResize(g_VRPSL, n + 1);    g_VRPSL[n]    = sl;
+}
+
+void United_VRPRemoveAt(const int idx)
+{
+   int last = ArraySize(g_VRPSym) - 1;
+   if(idx < 0 || idx > last) return;
+   g_VRPSym[idx]   = g_VRPSym[last];
+   g_VRPIsBuy[idx] = g_VRPIsBuy[last];
+   g_VRPEntry[idx] = g_VRPEntry[last];
+   g_VRPTP[idx]    = g_VRPTP[last];
+   g_VRPSL[idx]    = g_VRPSL[last];
+   ArrayResize(g_VRPSym, last);
+   ArrayResize(g_VRPIsBuy, last);
+   ArrayResize(g_VRPEntry, last);
+   ArrayResize(g_VRPTP, last);
+   ArrayResize(g_VRPSL, last);
+}
+
+//+------------------------------------------------------------------+
+//| Per-tick shadow-book manager: resolve virtual positions and, when |
+//| the virtual win rate shows recovery, resume REAL trading by       |
+//| raising the monthly re-arm level (so the breaker won't re-trip    |
+//| until losses deepen another full threshold).                      |
+//+------------------------------------------------------------------+
+void United_VirtualRecoveryManage()
+{
+   if(!VRP_Enable || !g_VRPActive) return;
+
+   for(int i = ArraySize(g_VRPSym) - 1; i >= 0; i--)
+   {
+      double px = SymbolInfoDouble(g_VRPSym[i], SYMBOL_BID);
+      if(px <= 0.0) continue;
+      bool isBuy = g_VRPIsBuy[i];
+      bool win  = isBuy ? (px >= g_VRPTP[i]) : (px <= g_VRPTP[i]);
+      bool loss = isBuy ? (px <= g_VRPSL[i]) : (px >= g_VRPSL[i]);
+      if(!win && !loss) continue;
+      if(win) g_VRPWins++; else g_VRPLosses++;
+      United_VRPRemoveAt(i);
+   }
+
+   int closed = g_VRPWins + g_VRPLosses;
+   if(closed >= VRP_ProbeTrades)
+   {
+      double winRate = (closed > 0 ? (double)g_VRPWins / (double)closed : 0.0);
+      if(winRate >= VRP_ResumeWinRate)
+      {
+         // Recovery confirmed -> resume real trading. Raise the arm level so the
+         // breaker stays disarmed until losses deepen another full threshold.
+         double monthPL   = United_ThisMonthKnownRealizedPL();
+         double threshold = United_MonthlyLossThresholdUSD();
+         g_MonthlyLossArmLevel = monthPL - threshold;
+         PrintFormat("[VIRTUAL-RECOVERY] REAL trading RESUMED: virtual winRate=%.0f%% (%d/%d) >= %.0f%% | monthPL=%.2f, re-arm level lowered to %.2f",
+                     winRate * 100.0, g_VRPWins, closed, VRP_ResumeWinRate * 100.0, monthPL, g_MonthlyLossArmLevel);
+         g_VRPActive = false;
+         United_VRPResetEpisode();
+      }
+      else if(TimeCurrent() - g_VRPLastLog >= 3600)
+      {
+         g_VRPLastLog = TimeCurrent();
+         PrintFormat("[VIRTUAL-RECOVERY] shadow probing: virtual winRate=%.0f%% (%d/%d) < %.0f%% target, real trading still paused",
+                     winRate * 100.0, g_VRPWins, closed, VRP_ResumeWinRate * 100.0);
+      }
+   }
+}
+
 bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const bool isBuy)
 {
    // Portfolio circuit-breaker cooldown blocks ALL new real entries (even if GRM off).
@@ -1054,30 +1187,80 @@ bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const 
       }
       if(monthlyLossThreshold > 0.0 && monthPL <= -monthlyLossThreshold)
       {
-         if(GRM_MonthlyLossCooldownHours <= 0.0)
+         double eqNow = AccountInfoDouble(ACCOUNT_EQUITY);
+         double fmNow = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+         if(VRP_Enable)
+         {
+            // Virtual Recovery Probe: pause REAL trading but keep shadow-trading;
+            // resume on simulated win-rate recovery (handled by the OnTick manager
+            // which raises g_MonthlyLossArmLevel). Highest-precedence recovery mode.
+            datetime ms = United_MonthStart();
+            if(ms != g_MonthlyLossArmMonth)   // new month -> reset breaker + probe state
+            {
+               g_MonthlyLossArmMonth = ms;
+               g_MonthlyLossArmLevel = 0.0;
+               g_VRPActive = false;
+               United_VRPResetEpisode();
+            }
+            if(monthPL <= g_MonthlyLossArmLevel)   // still armed at/below this loss level
+            {
+               if(!g_VRPActive)
+               {
+                  g_VRPActive = true;
+                  United_VRPResetEpisode();
+                  PrintFormat("[VIRTUAL-RECOVERY] SHADOW MODE engaged: monthPL=%.2f <= -%.2f limit | equity=%.2f freeMargin=%.2f | real entries paused, probing virtual win rate (need %d trades @ >=%.0f%%)",
+                              monthPL, monthlyLossThreshold, eqNow, fmNow, VRP_ProbeTrades, VRP_ResumeWinRate * 100.0);
+               }
+               United_VRPRecordVirtual(symbol, isBuy);   // log the would-be entry as virtual
+               return false;                              // no real entry while probing
+            }
+            // monthPL recovered above the arm level -> allow real trading
+         }
+         else if(GRM_MonthlyLossCooldownHours <= 0.0)
          {
             // Legacy hard block: no new entries for the rest of the calendar month.
-            if(GRM_DebugLogs) Print("GRM blocks entry: monthly loss limit reached (month-lock), monthPL=", DoubleToString(monthPL, 2));
+            // Always-on, throttled log (rich context) so the wasted month is visible.
+            if(TimeCurrent() - g_MonthlyLossLastLog >= 3600)
+            {
+               g_MonthlyLossLastLog = TimeCurrent();
+               PrintFormat("[MONTHLY-LOSS BREAKER] MONTH-LOCK active for %s: monthPL=%.2f <= -%.2f limit | equity=%.2f freeMargin=%.2f | NO new entries until next calendar month (set GRM_MonthlyLossCooldownHours>0 for recoverable cooldown)",
+                           symbol, monthPL, monthlyLossThreshold, eqNow, fmNow);
+            }
             return false;
          }
-         // Re-arming cooldown: pause entries for a recoverable window, not the whole month.
-         datetime ms = United_MonthStart();
-         if(ms != g_MonthlyLossArmMonth)   // new month -> reset breaker state
+         else
          {
-            g_MonthlyLossArmMonth = ms;
-            g_MonthlyLossArmLevel = 0.0;
-            g_MonthlyLossCooldownUntil = 0;
+            // Re-arming cooldown: pause entries for a recoverable window, not the whole month.
+            datetime ms = United_MonthStart();
+            if(ms != g_MonthlyLossArmMonth)   // new month -> reset breaker state
+            {
+               g_MonthlyLossArmMonth = ms;
+               g_MonthlyLossArmLevel = 0.0;
+               g_MonthlyLossCooldownUntil = 0;
+            }
+            datetime nowt = TimeCurrent();
+            if(nowt >= g_MonthlyLossCooldownUntil && monthPL <= g_MonthlyLossArmLevel)
+            {
+               g_MonthlyLossCooldownUntil = nowt + (datetime)(GRM_MonthlyLossCooldownHours * 3600.0);
+               g_MonthlyLossArmLevel = monthPL - monthlyLossThreshold;  // re-arm only if losses deepen another full threshold
+               // Always-on log on each fresh arm: rich context for tuning.
+               PrintFormat("[MONTHLY-LOSS BREAKER] cooldown ARMED for %s: monthPL=%.2f <= -%.2f limit | equity=%.2f freeMargin=%.2f | pause %.1fh until %s | re-arms only if monthPL falls below %.2f",
+                           symbol, monthPL, monthlyLossThreshold, eqNow, fmNow,
+                           GRM_MonthlyLossCooldownHours, TimeToString(g_MonthlyLossCooldownUntil, TIME_DATE | TIME_MINUTES),
+                           g_MonthlyLossArmLevel);
+            }
+            if(nowt < g_MonthlyLossCooldownUntil)
+            {
+               if(TimeCurrent() - g_MonthlyLossLastLog >= 3600)
+               {
+                  g_MonthlyLossLastLog = TimeCurrent();
+                  PrintFormat("[MONTHLY-LOSS BREAKER] in cooldown for %s: monthPL=%.2f | resumes %s",
+                              symbol, monthPL, TimeToString(g_MonthlyLossCooldownUntil, TIME_DATE | TIME_MINUTES));
+               }
+               return false;   // inside cooldown window -> pause new entries
+            }
+            // cooldown elapsed -> allow entries again for a within-month recovery chance
          }
-         datetime nowt = TimeCurrent();
-         if(nowt >= g_MonthlyLossCooldownUntil && monthPL <= g_MonthlyLossArmLevel)
-         {
-            g_MonthlyLossCooldownUntil = nowt + (datetime)(GRM_MonthlyLossCooldownHours * 3600.0);
-            g_MonthlyLossArmLevel = monthPL - monthlyLossThreshold;  // re-arm only if losses deepen another full threshold
-            if(GRM_DebugLogs) PrintFormat("GRM monthly-loss cooldown armed until %s (monthPL=%.2f)", TimeToString(g_MonthlyLossCooldownUntil), monthPL);
-         }
-         if(nowt < g_MonthlyLossCooldownUntil)
-            return false;   // inside cooldown window -> pause new entries
-         // cooldown elapsed -> allow entries again for a within-month recovery chance
       }
    }
    if(United_CurrentMonthIsBlocked() && United_SymbolIsBlockedByList(symbol))
@@ -1822,6 +2005,17 @@ double g_EquityPeak = 0.0;   // running equity high-water mark for the URF drawd
 datetime g_MonthlyLossCooldownUntil = 0;  // recoverable monthly-loss breaker: pause-until time
 double   g_MonthlyLossArmLevel = 0.0;     // monthPL level that re-arms the cooldown
 datetime g_MonthlyLossArmMonth = 0;       // month-start of the current arm state (for reset)
+datetime g_MonthlyLossLastLog = 0;        // throttle for the always-on monthly-loss breaker log
+// --- Virtual Recovery Probe (VRP) state ---
+bool     g_VRPActive = false;             // shadow-trading mode engaged (real entries paused)
+datetime g_VRPLastLog = 0;                // throttle for shadow-mode status log
+int      g_VRPWins = 0;                   // closed virtual wins in the current probe episode
+int      g_VRPLosses = 0;                 // closed virtual losses in the current probe episode
+string   g_VRPSym[];                      // open virtual positions: symbol
+bool     g_VRPIsBuy[];                    //                          side
+double   g_VRPEntry[];                    //                          entry price
+double   g_VRPTP[];                       //                          take-profit price (absolute)
+double   g_VRPSL[];                       //                          stop-loss price (absolute)
 double g_InitialDeposit = 0.0;   // starting principal (captured at OnInit) for the Principal Guard
 datetime g_PESCooldownUntil = 0;   // Portfolio Equity Stop: block new entries until this time
 datetime g_CBLastVirtualLog = 0;   // throttle for circuit-breaker virtual-entry logging
@@ -3041,6 +3235,9 @@ void OnTick()
 
    // Regime quick-exit: cap counter-trend runaways (opt-in, default off).
    United_RegimeQuickExit();
+
+   // Virtual Recovery Probe: resolve shadow trades + resume real trading on recovery.
+   United_VirtualRecoveryManage();
 
    // Swap-aware close near rollover (off by default).
    United_SwapAwareClose();
