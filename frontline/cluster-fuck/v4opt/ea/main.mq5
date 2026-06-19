@@ -94,6 +94,11 @@ input double GRM_MonthlyLossLimitUSD = 0.0;
 input double GRM_MonthlyProfitTargetFreeMarginPct = 0.0;
 // 0 = disabled. Threshold = free margin * pct / 100.
 input double GRM_MonthlyLossLimitFreeMarginPct = 3.0;
+// Monthly-loss breaker recovery: 0 = legacy hard lock for the rest of the month;
+// >0 = re-arming cooldown (hours). After the limit is hit, entries pause for this
+// many hours then resume (within-month recovery), re-arming only if losses deepen
+// by another full threshold. Avoids the crude "no trading until next month" lockout.
+input double GRM_MonthlyLossCooldownHours = 0.0;
 // Comma-separated months 1-12. Empty = disabled.
 input string GRM_BlockEntryMonths = "";
 // Comma-separated symbol fragments. Empty = all symbols in blocked months.
@@ -109,7 +114,7 @@ input int    GRM_XAUStressATRPeriod = 14;
 input double GRM_XAUStressMinATRPct = 1.00;
 input int    GRM_XAUStressADXPeriod = 14;
 input double GRM_XAUStressMaxADX = 26.0;
-input bool   GRM_TrendAlignEnable = false;
+input bool   GRM_TrendAlignEnable = true;
 input string GRM_TrendAlignSymbolContains = "";
 input ENUM_TIMEFRAMES GRM_TrendAlignTimeframe = PERIOD_D1;
 input int    GRM_TrendAlignMAPeriod = 200;
@@ -117,6 +122,10 @@ input int    GRM_TrendAlignSlopeLookback = 20;
 input double GRM_TrendAlignMinSlopePct = 0.30;
 input int    GRM_TrendAlignATRPeriod = 14;
 input double GRM_TrendAlignMinDistanceATR = 0.0;
+// Empty = apply the regime trend-align filter to ALL strategies; else only to
+// these magics (CSV). Use to scope it to trend-followers and exempt mean-
+// reversion scalpers that intentionally take quick counter-trend trades.
+input string GRM_TrendAlignMagics = "";
 input bool   GRM_ConsecutiveLossCooldownEnable = false;
 input int    GRM_ConsecutiveLossCount = 3;
 input int    GRM_ConsecutiveLossLookbackDays = 30;
@@ -815,10 +824,12 @@ bool United_XAUStressRegimeBlocksEntry(const string symbol)
    return (atrPct >= GRM_XAUStressMinATRPct && adx[0] <= GRM_XAUStressMaxADX);
 }
 
-bool United_TrendAlignmentBlocksEntry(const string symbol, const bool isBuy)
+bool United_TrendAlignmentBlocksEntry(const string symbol, const ulong magic, const bool isBuy)
 {
    if(!GRM_TrendAlignEnable)
       return false;
+   if(GRM_TrendAlignMagics != "" && !United_MagicIsInCsv(magic, GRM_TrendAlignMagics))
+      return false;  // not in scope -> never blocked (e.g. scalpers keep counter-trend)
    if(GRM_TrendAlignSymbolContains != "" && !United_SymbolContainsAny(symbol, GRM_TrendAlignSymbolContains))
       return false;
    if(GRM_TrendAlignMAPeriod <= 1 || GRM_TrendAlignSlopeLookback <= 0)
@@ -949,8 +960,30 @@ bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const 
       }
       if(monthlyLossThreshold > 0.0 && monthPL <= -monthlyLossThreshold)
       {
-         if(GRM_DebugLogs) Print("GRM blocks entry: monthly loss limit reached, monthPL=", DoubleToString(monthPL, 2));
-         return false;
+         if(GRM_MonthlyLossCooldownHours <= 0.0)
+         {
+            // Legacy hard block: no new entries for the rest of the calendar month.
+            if(GRM_DebugLogs) Print("GRM blocks entry: monthly loss limit reached (month-lock), monthPL=", DoubleToString(monthPL, 2));
+            return false;
+         }
+         // Re-arming cooldown: pause entries for a recoverable window, not the whole month.
+         datetime ms = United_MonthStart();
+         if(ms != g_MonthlyLossArmMonth)   // new month -> reset breaker state
+         {
+            g_MonthlyLossArmMonth = ms;
+            g_MonthlyLossArmLevel = 0.0;
+            g_MonthlyLossCooldownUntil = 0;
+         }
+         datetime nowt = TimeCurrent();
+         if(nowt >= g_MonthlyLossCooldownUntil && monthPL <= g_MonthlyLossArmLevel)
+         {
+            g_MonthlyLossCooldownUntil = nowt + (datetime)(GRM_MonthlyLossCooldownHours * 3600.0);
+            g_MonthlyLossArmLevel = monthPL - monthlyLossThreshold;  // re-arm only if losses deepen another full threshold
+            if(GRM_DebugLogs) PrintFormat("GRM monthly-loss cooldown armed until %s (monthPL=%.2f)", TimeToString(g_MonthlyLossCooldownUntil), monthPL);
+         }
+         if(nowt < g_MonthlyLossCooldownUntil)
+            return false;   // inside cooldown window -> pause new entries
+         // cooldown elapsed -> allow entries again for a within-month recovery chance
       }
    }
    if(United_CurrentMonthIsBlocked() && United_SymbolIsBlockedByList(symbol))
@@ -973,7 +1006,7 @@ bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const 
       if(GRM_DebugLogs) Print("GRM blocks entry: XAU stress regime for ", symbol);
       return false;
    }
-   if(United_TrendAlignmentBlocksEntry(symbol, isBuy))
+   if(United_TrendAlignmentBlocksEntry(symbol, magic, isBuy))
    {
       if(GRM_DebugLogs) Print("GRM blocks entry: trend-alignment regime for ", symbol);
       return false;
@@ -1055,7 +1088,7 @@ input bool   ORCH_ScaleLotsByBalance = true;
 input bool   ORCH_UseEquityInsteadOfBalance = false;
 input double ORCH_ReferenceBalance = 3000.0;
 input double ORCH_MinBalanceScale = 0.1;
-input double ORCH_MaxBalanceScale = 6.0;
+input double ORCH_MaxBalanceScale = 10.0;
 
 //+------------------------------------------------------------------+
 //| Unified Risk Facade (v4opt Phase 1)                              |
@@ -1692,6 +1725,9 @@ int g_NumSymbolRegimes = 0;
 //--- Performance caching to avoid per-tick HistorySelect overhead ---
 double g_CachedMarginScale = 1.0;
 double g_EquityPeak = 0.0;   // running equity high-water mark for the URF drawdown breaker
+datetime g_MonthlyLossCooldownUntil = 0;  // recoverable monthly-loss breaker: pause-until time
+double   g_MonthlyLossArmLevel = 0.0;     // monthPL level that re-arms the cooldown
+datetime g_MonthlyLossArmMonth = 0;       // month-start of the current arm state (for reset)
 double g_InitialDeposit = 0.0;   // starting principal (captured at OnInit) for the Principal Guard
 datetime g_PESCooldownUntil = 0;   // Portfolio Equity Stop: block new entries until this time
 datetime g_CBLastVirtualLog = 0;   // throttle for circuit-breaker virtual-entry logging
