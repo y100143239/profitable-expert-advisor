@@ -5,6 +5,10 @@ frozen snapshot** of the current best configuration, ready for one-click live
 deployment.
 
 - **Commit lineage:** champion `0e4db57` (signal-quality + shadow-breaker) on branch `v4opt-champion`.
+- **Live-quality fix (refresh):** trailing-stop SL modifications are now skipped when a
+  symbol's market is closed (e.g. stock CFDs overnight/weekend), eliminating the repeated
+  `[Market closed]` modify failures in the journal. Backtest-neutral (full $120,168 unchanged);
+  only live behaviour improves. The shipped `main.ex5` and `champion_v2.set` include this fix.
 - **Designed for:** deposit **3000 USD**, leverage **1:1000**.
 - **Symbols traded:** EURUSD, XAUUSD, BTCUSD, GER40/DE40, plus US stock CFDs (AAPL, NVDA, TSLA, MU) — see `champion_v2.set` `*_Symbol` / `Enable*` inputs.
 

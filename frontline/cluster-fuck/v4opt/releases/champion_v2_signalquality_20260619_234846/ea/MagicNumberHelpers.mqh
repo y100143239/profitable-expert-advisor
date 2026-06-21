@@ -89,6 +89,41 @@ bool ClosePositionByMagic(CTrade &trade_obj, string symbol, ulong magic_number)
 }
 
 //+------------------------------------------------------------------+
+//| Is the symbol's market open for trading right now? Used to skip   |
+//| stop-loss/trailing modifications when the venue is closed (e.g.   |
+//| stock CFDs overnight/weekend) which otherwise fail with           |
+//| "Market closed" and spam the journal every tick.                  |
+//+------------------------------------------------------------------+
+bool IsSymbolMarketOpen(const string symbol)
+{
+   if((ENUM_SYMBOL_TRADE_MODE)SymbolInfoInteger(symbol, SYMBOL_TRADE_MODE) == SYMBOL_TRADE_MODE_DISABLED)
+      return false;
+
+   datetime now = TimeCurrent();
+   MqlDateTime t;
+   TimeToStruct(now, t);
+   ENUM_DAY_OF_WEEK dow = (ENUM_DAY_OF_WEEK)t.day_of_week;
+   int secOfDay = t.hour * 3600 + t.min * 60 + t.sec;
+
+   datetime from, to;
+   bool anySession = false;
+   for(int i = 0; i < 8; i++)
+   {
+      if(!SymbolInfoSessionTrade(symbol, dow, i, from, to))
+         break;
+      anySession = true;
+      int fromSec = (int)(from % 86400);
+      int toSec   = (int)(to   % 86400);
+      if(secOfDay >= fromSec && secOfDay < toSec)
+         return true;
+   }
+   // No session table (typical for 24h FX/metal/crypto) -> assume open to avoid false negatives.
+   if(!anySession)
+      return true;
+   return false;
+}
+
+//+------------------------------------------------------------------+
 //| Modify position by symbol and magic number                        |
 //+------------------------------------------------------------------+
 bool ModifyPositionByMagic(CTrade &trade_obj, string symbol, ulong magic_number, 
@@ -97,7 +132,12 @@ bool ModifyPositionByMagic(CTrade &trade_obj, string symbol, ulong magic_number,
    ulong ticket = GetPositionTicketByMagic(symbol, magic_number);
    if(ticket == 0)
       return false;
-   
+
+   // Skip when the market is closed: the broker would reject with "Market
+   // closed" anyway, so attempting it only spams the journal every tick.
+   if(!IsSymbolMarketOpen(symbol))
+      return false;
+
    return trade_obj.PositionModify(ticket, sl, tp);
 }
 

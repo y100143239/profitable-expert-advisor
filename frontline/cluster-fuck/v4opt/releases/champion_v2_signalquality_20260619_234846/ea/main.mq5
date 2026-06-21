@@ -132,6 +132,20 @@ input int    GRM_XAUStressATRPeriod = 14;
 input double GRM_XAUStressMinATRPct = 1.00;
 input int    GRM_XAUStressADXPeriod = 14;
 input double GRM_XAUStressMaxADX = 26.0;
+// --- Regime-Scaled Sizing (RGS): de-risk lots in adverse/choppy regimes. ---
+// Shrinks per-strategy lots (down to RGS_MinScale) when a symbol's D1 regime is
+// directionless/choppy (high ATR% AND low ADX = the same signal as the XAU
+// stress filter, applied to ALL symbols for position SIZE rather than a hard
+// entry block). Trend-clean regimes keep full size, so leverage is preserved in
+// the good markets that drive profit while cold-start losses in chop (e.g. 2023)
+// are cut at the source. Default OFF (opt-in until validated).
+input bool   RGS_Enable = false;
+input ENUM_TIMEFRAMES RGS_Timeframe = PERIOD_D1;
+input int    RGS_ATRPeriod = 14;
+input double RGS_ChoppyATRPct = 1.00;   // ATR/close % at/above which the market is "volatile-choppy"
+input int    RGS_ADXPeriod = 14;
+input double RGS_ChoppyMaxADX = 26.0;    // ADX at/below which the market is "directionless"
+input double RGS_MinScale = 0.5;         // lot multiplier when fully in adverse regime
 input bool   GRM_TrendAlignEnable = true;
 input string GRM_TrendAlignSymbolContains = "";
 input ENUM_TIMEFRAMES GRM_TrendAlignTimeframe = PERIOD_D1;
@@ -849,6 +863,52 @@ bool United_XAUStressRegimeBlocksEntry(const string symbol)
       return false;
    double atrPct = atr[0] / close * 100.0;
    return (atrPct >= GRM_XAUStressMinATRPct && adx[0] <= GRM_XAUStressMaxADX);
+}
+
+//+------------------------------------------------------------------+
+//| Regime-scaled sizing factor [RSS_MinScale..1.0] for a symbol.     |
+//| Full size in trend-clean regimes; shrinks toward RSS_MinScale     |
+//| when the D1 regime is volatile-choppy (high ATR% AND low ADX),    |
+//| cutting risk at the source in directionless markets without       |
+//| capping leverage in the good regimes that drive profit.           |
+//+------------------------------------------------------------------+
+double United_RegimeSizeFactor(const string symbol)
+{
+   if(!RGS_Enable)
+      return 1.0;
+
+   int atrHandle = iATR(symbol, RGS_Timeframe, RGS_ATRPeriod);
+   int adxHandle = iADX(symbol, RGS_Timeframe, RGS_ADXPeriod);
+   if(atrHandle == INVALID_HANDLE || adxHandle == INVALID_HANDLE)
+   {
+      if(atrHandle != INVALID_HANDLE) IndicatorRelease(atrHandle);
+      if(adxHandle != INVALID_HANDLE) IndicatorRelease(adxHandle);
+      return 1.0;
+   }
+
+   double atr[], adx[];
+   ArraySetAsSeries(atr, true);
+   ArraySetAsSeries(adx, true);
+   bool ok = (CopyBuffer(atrHandle, 0, 1, 1, atr) == 1 && CopyBuffer(adxHandle, 0, 1, 1, adx) == 1);
+   IndicatorRelease(atrHandle);
+   IndicatorRelease(adxHandle);
+   if(!ok)
+      return 1.0;
+
+   double close = iClose(symbol, RGS_Timeframe, 1);
+   if(close <= 0.0)
+      return 1.0;
+   double atrPct = atr[0] / close * 100.0;
+
+   // Adverse = volatile (high ATR%) AND directionless (low ADX). Both must hold.
+   bool choppy = (atrPct >= RGS_ChoppyATRPct && adx[0] <= RGS_ChoppyMaxADX);
+   if(!choppy)
+      return 1.0;
+
+   double f = RGS_MinScale;
+   if(f < 0.0) f = 0.0;
+   if(f > 1.0) f = 1.0;
+   return f;
 }
 
 bool United_TrendAlignmentBlocksEntry(const string symbol, const ulong magic, const bool isBuy)
@@ -2620,6 +2680,7 @@ double United_ScaledRiskLot(const double baseLot, const string symbol, const ulo
               * United_LotThrottleFactor(symbol, magic)
               * United_CachedPerfMultiplier(magic)
               * United_PrincipalGuardScale()
+              * United_RegimeSizeFactor(symbol)
               * g_CachedMarginScale;
    return (lot > 0.0 ? lot : 0.0);
 }
