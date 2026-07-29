@@ -37,6 +37,9 @@ input group "=== Entry Models ==="
 input bool   DT_EnableRetracementEntry = true;
 input bool   DT_EnableKLineEntry = true;
 input bool   DT_RequireM1BreakRetest = true;
+input int    DT_TrendLookback = 20;
+input int    DT_MinStructurePivots = 3;
+input int    DT_SweepLookback = 30;
 input double DT_RetraceLevel = 0.50;          // 0.30 / 0.50 / 0.70
 input int    DT_KLineSequenceBars = 3;
 input double DT_RiskReward = 2.0;             // target = entry +/- R*SL
@@ -245,7 +248,8 @@ void OnTick()
       return;
 
    // Analyze multi-timeframe structure
-   DT_Structure structure = DT_AnalyzeStructure(g_symbol);
+   DT_Structure structure = DT_AnalyzeStructure(g_symbol, DT_TrendLookback,
+                                                 DT_MinStructurePivots, DT_SweepLookback);
    if(!structure.valid)
    {
       if(GetLastError() != ERR_SUCCESS)

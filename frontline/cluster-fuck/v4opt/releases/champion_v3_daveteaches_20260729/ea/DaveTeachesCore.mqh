@@ -63,7 +63,8 @@ double DT_NormalizePrice(const string symbol, const double price)
 //| Count higher-highs / higher-lows or lower-lows / lower-highs       |
 //| Uses the last N bars of the higher timeframe to determine trend.   |
 //+------------------------------------------------------------------+
-ENUM_DT_TREND DT_DetectTrend(const string symbol, const ENUM_TIMEFRAMES tf, const int lookback)
+ENUM_DT_TREND DT_DetectTrend(const string symbol, const ENUM_TIMEFRAMES tf, const int lookback,
+                             const int minPivots)
 {
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
@@ -85,19 +86,19 @@ ENUM_DT_TREND DT_DetectTrend(const string symbol, const ENUM_TIMEFRAMES tf, cons
          pivotLows[lowCount++] = rates[i].low;
    }
 
-   if(highCount < 4 || lowCount < 4)
+   if(highCount < minPivots || lowCount < minPivots)
       return DT_TREND_UNKNOWN;
 
    bool risingHighs = true;
    bool risingLows = true;
    bool fallingHighs = true;
    bool fallingLows = true;
-   for(int i = highCount - 4; i < highCount - 1; i++)
+   for(int i = highCount - minPivots; i < highCount - 1; i++)
    {
       risingHighs = risingHighs && pivotHighs[i + 1] > pivotHighs[i];
       fallingHighs = fallingHighs && pivotHighs[i + 1] < pivotHighs[i];
    }
-   for(int i = lowCount - 4; i < lowCount - 1; i++)
+   for(int i = lowCount - minPivots; i < lowCount - 1; i++)
    {
       risingLows = risingLows && pivotLows[i + 1] > pivotLows[i];
       fallingLows = fallingLows && pivotLows[i + 1] < pivotLows[i];
@@ -240,16 +241,17 @@ double DT_GetEMA21(const string symbol, const ENUM_TIMEFRAMES tf)
 //+------------------------------------------------------------------+
 //| Aggregate multi-timeframe structure: D1 -> H4 -> H1 -> M15        |
 //+------------------------------------------------------------------+
-DT_Structure DT_AnalyzeStructure(const string symbol)
+DT_Structure DT_AnalyzeStructure(const string symbol, const int trendLookback, const int minPivots,
+                                  const int sweepLookback)
 {
    DT_Structure s;
    ZeroMemory(s);
    s.trend = DT_TREND_UNKNOWN;
    s.valid = false;
 
-   ENUM_DT_TREND d1 = DT_DetectTrend(symbol, PERIOD_D1, 30);
-   ENUM_DT_TREND h4 = DT_DetectTrend(symbol, PERIOD_H4, 30);
-   ENUM_DT_TREND h1 = DT_DetectTrend(symbol, PERIOD_H1, 30);
+   ENUM_DT_TREND d1 = DT_DetectTrend(symbol, PERIOD_D1, trendLookback, minPivots);
+   ENUM_DT_TREND h4 = DT_DetectTrend(symbol, PERIOD_H4, trendLookback, minPivots);
+   ENUM_DT_TREND h1 = DT_DetectTrend(symbol, PERIOD_H1, trendLookback, minPivots);
 
    // Top-down confirmation: at least D1 and H4 must agree, H1 can refine
    if(d1 == DT_TREND_UNKNOWN || h4 == DT_TREND_UNKNOWN)
@@ -273,7 +275,7 @@ DT_Structure DT_AnalyzeStructure(const string symbol)
                             s.supplyZoneLow, s.supplyZoneHigh);
 
    // Liquidity sweep on H1
-   DT_DetectLiquiditySweep(symbol, PERIOD_H1, 20,
+   DT_DetectLiquiditySweep(symbol, PERIOD_H1, sweepLookback,
                            s.liquiditySweepUp, s.liquiditySweepDown);
 
    // M15 21 EMA for trailing stop
