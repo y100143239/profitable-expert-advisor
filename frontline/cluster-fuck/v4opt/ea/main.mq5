@@ -227,9 +227,10 @@ input bool   UST_RespectMarketOpen = true;   // skip modification when symbol se
 // Activation modes: price must move this far in profit before trailing begins.
 enum ENUM_UST_MODE
 {
-   UST_MODE_FIXED,   // fixed points activation + fixed points trail distance
-   UST_MODE_ATR,     // ATR-multiple activation + ATR-multiple trail distance
-   UST_MODE_PROFIT_R // move SL to entry + offset once position is in +N*risk profit
+   UST_MODE_FIXED,     // fixed points activation + fixed points trail distance
+   UST_MODE_ATR,       // ATR-multiple activation + ATR-multiple trail distance
+   UST_MODE_PROFIT_R,  // move SL to entry + offset once position is in +N*risk profit
+   UST_MODE_STRUCTURE  // Dave-style: trail behind recent swing low/high (and 21-EMA)
 };
 input ENUM_UST_MODE UST_Mode = UST_MODE_ATR;
 
@@ -246,6 +247,17 @@ input double UST_ATRTrailMult      = 0.45;   // tighter trail behind price
 // Profit-R mode inputs
 input double UST_ProfitRActivation = 0.7;    // activate once unrealized profit >= 0.7*risk
 input double UST_ProfitRTrailOffsetR = 0.3;  // lock in 0.3*risk once activated
+
+// Structure mode inputs (Dave Teaches trailing): once the position is in profit,
+// trail the stop behind the most recent swing low (BUY) / swing high (SELL) on a
+// chosen timeframe, optionally giving the trade room to the 21-EMA. This lets the
+// reaction run while ratcheting the stop up structure-by-structure. Never widens.
+input ENUM_TIMEFRAMES UST_StructTimeframe = PERIOD_M15;  // structure timeframe for swing/EMA
+input int    UST_StructLookback = 3;         // closed bars scanned for the swing extreme
+input double UST_StructActivationPoints = 100.0; // min profit (points) before structure trail arms
+input double UST_StructBufferPoints = 30.0;  // buffer beyond the structural extreme
+input bool   UST_StructUseEMA = true;        // also allow trailing to the 21-EMA (more room)
+input int    UST_StructEMAPeriod = 21;       // Dave's 21-EMA trail
 
 // Floating-profit drawdown guard: closes profitable positions when unrealized
 // profit retraces too far from its tick-level high. Independent of H1 bars.
@@ -3826,6 +3838,7 @@ void United_ApplyTrailingStops()
       double activation = 0.0;
       double trailDistance = 0.0;
       bool activated = false;
+      double structSL = 0.0;
 
       if(UST_Mode == UST_MODE_FIXED)
       {
@@ -3858,12 +3871,72 @@ void United_ApplyTrailingStops()
          trailDistance = -UST_ProfitRTrailOffsetR * riskPoints; // special: place SL at entry + offset
          activated = (profitPoints >= activation && riskPoints > 0.0);
       }
+      else if(UST_Mode == UST_MODE_STRUCTURE)
+      {
+         // Arm once the reaction has moved far enough into profit.
+         if(profitPoints < UST_StructActivationPoints)
+            continue;
+
+         int lookback = MathMax(1, UST_StructLookback);
+         double highs[]; double lows[];
+         ArraySetAsSeries(highs, true);
+         ArraySetAsSeries(lows, true);
+         // Use only closed bars (shift 1..lookback) to avoid intrabar repaint.
+         if(CopyHigh(symbol, UST_StructTimeframe, 1, lookback, highs) != lookback ||
+            CopyLow(symbol, UST_StructTimeframe, 1, lookback, lows) != lookback)
+            continue;
+
+         double buffer = UST_StructBufferPoints * point;
+         if(ptype == POSITION_TYPE_BUY)
+         {
+            double swingLow = lows[0];
+            for(int b = 1; b < lookback; b++)
+               if(lows[b] < swingLow) swingLow = lows[b];
+            double base = swingLow;
+            if(UST_StructUseEMA)
+            {
+               int emaHandle = iMA(symbol, UST_StructTimeframe, UST_StructEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+               if(emaHandle != INVALID_HANDLE)
+               {
+                  double ema[]; ArraySetAsSeries(ema, true);
+                  if(CopyBuffer(emaHandle, 0, 1, 1, ema) == 1 && ema[0] > 0.0)
+                     base = MathMin(base, ema[0]); // give the runner room down to the EMA
+                  IndicatorRelease(emaHandle);
+               }
+            }
+            structSL = base - buffer;
+         }
+         else // SELL
+         {
+            double swingHigh = highs[0];
+            for(int b = 1; b < lookback; b++)
+               if(highs[b] > swingHigh) swingHigh = highs[b];
+            double base = swingHigh;
+            if(UST_StructUseEMA)
+            {
+               int emaHandle = iMA(symbol, UST_StructTimeframe, UST_StructEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+               if(emaHandle != INVALID_HANDLE)
+               {
+                  double ema[]; ArraySetAsSeries(ema, true);
+                  if(CopyBuffer(emaHandle, 0, 1, 1, ema) == 1 && ema[0] > 0.0)
+                     base = MathMax(base, ema[0]);
+                  IndicatorRelease(emaHandle);
+               }
+            }
+            structSL = base + buffer;
+         }
+         activated = true;
+      }
 
       if(!activated)
          continue;
 
       double proposedSL = 0.0;
-      if(UST_Mode == UST_MODE_PROFIT_R)
+      if(UST_Mode == UST_MODE_STRUCTURE)
+      {
+         proposedSL = structSL;
+      }
+      else if(UST_Mode == UST_MODE_PROFIT_R)
       {
          if(ptype == POSITION_TYPE_BUY)
             proposedSL = openPrice + UST_ProfitRTrailOffsetR * riskPoints * point;
