@@ -80,6 +80,38 @@ double DT_RiskBasedLotSize(const string symbol, const double riskPct,
    return NormalizeDouble(lots, 2);
 }
 
+double DT_MarginCappedLot(const string symbol, const double requestedLots,
+                          const double maxMarginLoadPct)
+{
+   if(requestedLots <= 0.0 || maxMarginLoadPct <= 0.0)
+      return requestedLots;
+
+   double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+   double buyMargin = 0.0;
+   double sellMargin = 0.0;
+   if(ask <= 0.0 || bid <= 0.0)
+      return 0.0;
+   bool buyOk = OrderCalcMargin(ORDER_TYPE_BUY, symbol, requestedLots, ask, buyMargin);
+   bool sellOk = OrderCalcMargin(ORDER_TYPE_SELL, symbol, requestedLots, bid, sellMargin);
+   double required = MathMax(buyOk ? buyMargin : 0.0, sellOk ? sellMargin : 0.0);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double used = AccountInfoDouble(ACCOUNT_MARGIN);
+   double budget = equity * maxMarginLoadPct / 100.0 - used;
+   if(required <= 0.0 || budget <= 0.0)
+      return 0.0;
+   if(required <= budget)
+      return requestedLots;
+
+   double step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   if(step <= 0.0 || minLot <= 0.0)
+      return 0.0;
+   double capped = MathFloor(requestedLots * budget / required / step) * step;
+   capped = NormalizeDouble(capped, (int)MathRound(-MathLog10(step)));
+   return capped >= minLot ? capped : 0.0;
+}
+
 //+------------------------------------------------------------------+
 //| Account-stage sizing: increase lots only when equity crosses      |
 //| fixed thresholds (e.g. every $1000).                              |

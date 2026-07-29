@@ -27,6 +27,20 @@ struct DT_EntrySignal
    string reason;
 };
 
+bool DT_M1BreakRetestConfirmed(const string symbol, const ENUM_DT_TREND trend)
+{
+   MqlRates m1[];
+   ArraySetAsSeries(m1, true);
+   if(CopyRates(symbol, PERIOD_M1, 1, 4, m1) < 4)
+      return false;
+
+   if(trend == DT_TREND_UP)
+      return m1[1].close > m1[2].high && m1[0].low <= m1[2].high;
+   if(trend == DT_TREND_DOWN)
+      return m1[1].close < m1[2].low && m1[0].high >= m1[2].low;
+   return false;
+}
+
 //+------------------------------------------------------------------+
 //| Retracement entry: after a liquidity sweep into a HTF zone,      |
 //| price pulls back to 30%/50%/70% of the prior range.               |
@@ -171,6 +185,7 @@ DT_EntrySignal DT_CheckKLineStructureEntry(const string symbol, const DT_Structu
 DT_EntrySignal DT_GetEntrySignal(const string symbol, const DT_Structure &s,
                                  const bool enableRetracement,
                                  const bool enableKLine,
+                                 const bool requireM1Confirmation,
                                  const double retraceLevel,
                                  const int kLineSequenceBars,
                                  const double riskReward,
@@ -185,7 +200,11 @@ DT_EntrySignal DT_GetEntrySignal(const string symbol, const DT_Structure &s,
    {
       sig = DT_CheckRetracementEntry(symbol, s, retraceLevel, riskReward, slBufferPoints);
       if(sig.signal != DT_ENTRY_NONE)
-         return sig;
+      {
+         if(!requireM1Confirmation || DT_M1BreakRetestConfirmed(symbol, s.trend))
+            return sig;
+         sig.signal = DT_ENTRY_NONE;
+      }
    }
 
    // K-line structure entry
@@ -193,7 +212,10 @@ DT_EntrySignal DT_GetEntrySignal(const string symbol, const DT_Structure &s,
    {
       sig = DT_CheckKLineStructureEntry(symbol, s, kLineSequenceBars, riskReward, slBufferPoints);
       if(sig.signal != DT_ENTRY_NONE)
-         return sig;
+      {
+         if(!requireM1Confirmation || DT_M1BreakRetestConfirmed(symbol, s.trend))
+            return sig;
+      }
    }
 
    return sig;

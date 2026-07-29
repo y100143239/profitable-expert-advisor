@@ -29,10 +29,12 @@ input group "=== Risk Management ==="
 input double DT_RiskPerTradePct = 2.0;        // 1-2% conservative; Dave used 3-5%
 input double DT_DailyLossLimitPct = 5.0;      // 0 = disabled
 input double DT_AccountStageUSD = 0.0;        // 0 = disabled; else min equity stage
+input double DT_MaxMarginLoadPct = 10.0;      // broker-aware cap for one new position
 
 input group "=== Entry Models ==="
 input bool   DT_EnableRetracementEntry = true;
 input bool   DT_EnableKLineEntry = true;
+input bool   DT_RequireM1BreakRetest = true;
 input double DT_RetraceLevel = 0.50;          // 0.30 / 0.50 / 0.70
 input int    DT_KLineSequenceBars = 3;
 input double DT_RiskReward = 2.0;             // target = entry +/- R*SL
@@ -132,6 +134,7 @@ bool DT_OpenPosition(const DT_EntrySignal &sig)
 
    double lots = DT_RiskBasedLotSize(g_symbol, DT_RiskPerTradePct,
                                      sig.entryPrice, sig.stopLoss);
+   lots = DT_MarginCappedLot(g_symbol, lots, DT_MaxMarginLoadPct);
    if(lots <= 0.0)
    {
       Print("DaveTeachesEA: lot size zero (SL too close?)");
@@ -220,6 +223,7 @@ void OnTick()
    DT_EntrySignal sig = DT_GetEntrySignal(g_symbol, structure,
                                           DT_EnableRetracementEntry,
                                           DT_EnableKLineEntry,
+                                          DT_RequireM1BreakRetest,
                                           DT_RetraceLevel,
                                           DT_KLineSequenceBars,
                                           DT_RiskReward,

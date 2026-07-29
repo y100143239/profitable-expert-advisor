@@ -67,33 +67,45 @@ ENUM_DT_TREND DT_DetectTrend(const string symbol, const ENUM_TIMEFRAMES tf, cons
 {
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
-   int copied = CopyRates(symbol, tf, 0, lookback + 2, rates);
-   if(copied < lookback + 2)
+   int copied = CopyRates(symbol, tf, 1, lookback + 6, rates);
+   if(copied < lookback + 6)
       return DT_TREND_UNKNOWN;
 
-   int hh = 0, ll = 0, lh = 0, hl = 0;
-   double lastHigh = rates[lookback + 1].high;
-   double lastLow  = rates[lookback + 1].low;
-
-   for(int i = lookback; i >= 1; i--)
+   double pivotHighs[8];
+   double pivotLows[8];
+   int highCount = 0;
+   int lowCount = 0;
+   for(int i = copied - 3; i >= 2; i--)
    {
-      bool isHH = (rates[i].high > lastHigh);
-      bool isLL = (rates[i].low < lastLow);
-      bool isHL = (rates[i].low > lastLow);
-      bool isLH = (rates[i].high < lastHigh);
-
-      if(isHH && isHL) hh++;
-      else if(isLL && isLH) ll++;
-      else if(isHH && isLH) lh++;
-      else if(isLL && isHL) hl++;
-
-      lastHigh = rates[i].high;
-      lastLow  = rates[i].low;
+      bool pivotHigh = rates[i].high > rates[i-1].high && rates[i].high > rates[i+1].high;
+      bool pivotLow = rates[i].low < rates[i-1].low && rates[i].low < rates[i+1].low;
+      if(pivotHigh && highCount < 8)
+         pivotHighs[highCount++] = rates[i].high;
+      if(pivotLow && lowCount < 8)
+         pivotLows[lowCount++] = rates[i].low;
    }
 
-   if(hh >= 4 && hl >= 4)
+   if(highCount < 4 || lowCount < 4)
+      return DT_TREND_UNKNOWN;
+
+   bool risingHighs = true;
+   bool risingLows = true;
+   bool fallingHighs = true;
+   bool fallingLows = true;
+   for(int i = highCount - 4; i < highCount - 1; i++)
+   {
+      risingHighs = risingHighs && pivotHighs[i + 1] > pivotHighs[i];
+      fallingHighs = fallingHighs && pivotHighs[i + 1] < pivotHighs[i];
+   }
+   for(int i = lowCount - 4; i < lowCount - 1; i++)
+   {
+      risingLows = risingLows && pivotLows[i + 1] > pivotLows[i];
+      fallingLows = fallingLows && pivotLows[i + 1] < pivotLows[i];
+   }
+
+   if(risingHighs && risingLows)
       return DT_TREND_UP;
-   if(ll >= 4 && lh >= 4)
+   if(fallingHighs && fallingLows)
       return DT_TREND_DOWN;
    return DT_TREND_RANGE;
 }
@@ -112,7 +124,7 @@ void DT_FindLastSwing(const string symbol, const ENUM_TIMEFRAMES tf, const int b
 
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
-   int copied = CopyRates(symbol, tf, 0, bars + 2, rates);
+   int copied = CopyRates(symbol, tf, 1, bars + 2, rates);
    if(copied < bars + 2)
       return;
 
@@ -148,7 +160,7 @@ void DT_FindSupplyDemandZones(const string symbol, const ENUM_TIMEFRAMES tf, con
 
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
-   int copied = CopyRates(symbol, tf, 0, lookback, rates);
+   int copied = CopyRates(symbol, tf, 1, lookback, rates);
    if(copied < lookback)
       return;
 
