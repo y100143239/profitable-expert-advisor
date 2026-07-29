@@ -37,6 +37,9 @@ input group "=== Entry Models ==="
 input bool   DT_EnableRetracementEntry = true;
 input bool   DT_EnableKLineEntry = true;
 input bool   DT_RequireM1BreakRetest = true;
+input bool   DT_RequireLiquiditySweep = false;
+input bool   DT_RequireZone = false;
+input double DT_RetraceTolerance = 0.15;      // band width around retrace target
 input int    DT_TrendLookback = 20;
 input int    DT_MinStructurePivots = 3;
 input int    DT_SweepLookback = 30;
@@ -265,7 +268,10 @@ void OnTick()
                                           DT_RetraceLevel,
                                           DT_KLineSequenceBars,
                                           DT_RiskReward,
-                                          DT_SLBufferPoints);
+                                          DT_SLBufferPoints,
+                                          DT_RequireLiquiditySweep,
+                                          DT_RequireZone,
+                                          DT_RetraceTolerance);
 
    if(sig.signal != DT_ENTRY_NONE)
    {

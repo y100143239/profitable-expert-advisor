@@ -48,7 +48,10 @@ bool DT_M1BreakRetestConfirmed(const string symbol, const ENUM_DT_TREND trend)
 DT_EntrySignal DT_CheckRetracementEntry(const string symbol, const DT_Structure &s,
                                         const double retraceLevel,
                                         const double riskReward,
-                                        const double slBufferPoints)
+                                        const double slBufferPoints,
+                                        const bool requireSweep,
+                                        const bool requireZone,
+                                        const double retraceTolerance)
 {
    DT_EntrySignal sig;
    ZeroMemory(sig);
@@ -72,13 +75,15 @@ DT_EntrySignal DT_CheckRetracementEntry(const string symbol, const DT_Structure 
 
    double buffer = slBufferPoints * point;
 
-   // Buy: trend up, sweep down, price in demand zone, pullback to retrace level
-   if(s.trend == DT_TREND_UP && s.liquiditySweepDown && DT_PriceInDemandZone(symbol, s))
+   // Buy: trend up, optional sweep-down / demand-zone confirmation, pullback to retrace level
+   if(s.trend == DT_TREND_UP
+      && (!requireSweep || s.liquiditySweepDown)
+      && (!requireZone || DT_PriceInDemandZone(symbol, s)))
    {
       double target = s.lastSwingLow + range * retraceLevel;
       double currentClose = m15[1].close;
       // Price near the retrace level on M15 closed bar
-      if(MathAbs(currentClose - target) <= range * 0.10)
+      if(MathAbs(currentClose - target) <= range * retraceTolerance)
       {
          sig.signal = DT_ENTRY_BUY;
          sig.entryPrice = currentClose;
@@ -88,12 +93,14 @@ DT_EntrySignal DT_CheckRetracementEntry(const string symbol, const DT_Structure 
       }
    }
 
-   // Sell: trend down, sweep up, price in supply zone, pullback to retrace level
-   if(s.trend == DT_TREND_DOWN && s.liquiditySweepUp && DT_PriceInSupplyZone(symbol, s))
+   // Sell: trend down, optional sweep-up / supply-zone confirmation, pullback to retrace level
+   if(s.trend == DT_TREND_DOWN
+      && (!requireSweep || s.liquiditySweepUp)
+      && (!requireZone || DT_PriceInSupplyZone(symbol, s)))
    {
       double target = s.lastSwingHigh - range * retraceLevel;
       double currentClose = m15[1].close;
-      if(MathAbs(currentClose - target) <= range * 0.10)
+      if(MathAbs(currentClose - target) <= range * retraceTolerance)
       {
          sig.signal = DT_ENTRY_SELL;
          sig.entryPrice = currentClose;
@@ -113,7 +120,8 @@ DT_EntrySignal DT_CheckRetracementEntry(const string symbol, const DT_Structure 
 DT_EntrySignal DT_CheckKLineStructureEntry(const string symbol, const DT_Structure &s,
                                            const int sequenceBars,
                                            const double riskReward,
-                                           const double slBufferPoints)
+                                           const double slBufferPoints,
+                                           const bool requireSweep)
 {
    DT_EntrySignal sig;
    ZeroMemory(sig);
@@ -143,7 +151,7 @@ DT_EntrySignal DT_CheckKLineStructureEntry(const string symbol, const DT_Structu
       { bearSequence = false; break; }
    }
    bool reversalCandle = (m15[1].close > m15[2].high);
-   if(bearSequence && reversalCandle && s.trend == DT_TREND_UP && s.liquiditySweepDown)
+   if(bearSequence && reversalCandle && s.trend == DT_TREND_UP && (!requireSweep || s.liquiditySweepDown))
    {
       double entry = m15[1].close;
       double sl = DT_NormalizePrice(symbol, m15[1].low - buffer);
@@ -164,7 +172,7 @@ DT_EntrySignal DT_CheckKLineStructureEntry(const string symbol, const DT_Structu
       { bullSequence = false; break; }
    }
    bool reversalCandleDown = (m15[1].close < m15[2].low);
-   if(bullSequence && reversalCandleDown && s.trend == DT_TREND_DOWN && s.liquiditySweepUp)
+   if(bullSequence && reversalCandleDown && s.trend == DT_TREND_DOWN && (!requireSweep || s.liquiditySweepUp))
    {
       double entry = m15[1].close;
       double sl = DT_NormalizePrice(symbol, m15[1].high + buffer);
@@ -189,7 +197,10 @@ DT_EntrySignal DT_GetEntrySignal(const string symbol, const DT_Structure &s,
                                  const double retraceLevel,
                                  const int kLineSequenceBars,
                                  const double riskReward,
-                                 const double slBufferPoints)
+                                 const double slBufferPoints,
+                                 const bool requireSweep,
+                                 const bool requireZone,
+                                 const double retraceTolerance)
 {
    DT_EntrySignal sig;
    ZeroMemory(sig);
@@ -198,7 +209,8 @@ DT_EntrySignal DT_GetEntrySignal(const string symbol, const DT_Structure &s,
    // Retracement entry has priority
    if(enableRetracement)
    {
-      sig = DT_CheckRetracementEntry(symbol, s, retraceLevel, riskReward, slBufferPoints);
+      sig = DT_CheckRetracementEntry(symbol, s, retraceLevel, riskReward, slBufferPoints,
+                                     requireSweep, requireZone, retraceTolerance);
       if(sig.signal != DT_ENTRY_NONE)
       {
          if(!requireM1Confirmation || DT_M1BreakRetestConfirmed(symbol, s.trend))
@@ -210,7 +222,8 @@ DT_EntrySignal DT_GetEntrySignal(const string symbol, const DT_Structure &s,
    // K-line structure entry
    if(enableKLine)
    {
-      sig = DT_CheckKLineStructureEntry(symbol, s, kLineSequenceBars, riskReward, slBufferPoints);
+      sig = DT_CheckKLineStructureEntry(symbol, s, kLineSequenceBars, riskReward, slBufferPoints,
+                                        requireSweep);
       if(sig.signal != DT_ENTRY_NONE)
       {
          if(!requireM1Confirmation || DT_M1BreakRetestConfirmed(symbol, s.trend))
