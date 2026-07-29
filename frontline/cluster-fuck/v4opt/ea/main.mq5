@@ -252,6 +252,17 @@ input double UST_ProfitRTrailOffsetR = 0.3;  // lock in 0.3*risk once activated
 input bool   UST_ProfitDrawdownGuard = true; // enable tick-level profit drawdown close
 input double UST_ProfitDrawdownPct = 30.0;   // close when floating profit falls to (100-X)% of its high
 
+// Time stop: close positions that never move into profit quickly enough.
+input bool   UST_TimeStopEnable = true;      // close if position has not reached min profit within N minutes
+input int    UST_TimeStopMinutes = 30;       // maximum minutes to wait for profit
+input double UST_TimeStopMinProfitUSD = 1.0; // position must reach at least this much profit or be closed
+
+// Hard maximum risk cap: closes positions whose floating loss exceeds a fixed
+// USD amount or percentage of account balance, regardless of original SL.
+input bool   UST_MaxRiskCapEnable = true;    // enforce a unified maximum loss per position
+input double UST_MaxRiskUSD = 50.0;          // absolute max floating loss per position
+input double UST_MaxRiskPctBalance = 2.0;    // max floating loss as % of balance (0=disable)
+
 //+------------------------------------------------------------------+
 //| Monthly Loss Breaker Softening (iter10E12)                       |
 //| Replace the crude "rest-of-month" hard lock with a recoverable   |
@@ -3645,10 +3656,11 @@ void United_ApplyTrailingStops()
       if(bid <= 0.0 || ask <= 0.0)
          continue;
 
+      double floatingPL = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + PositionGetDouble(POSITION_COMMISSION);
+
       // --- Tick-level floating-profit drawdown guard ---
       if(UST_ProfitDrawdownGuard)
       {
-         double floatingPL = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + PositionGetDouble(POSITION_COMMISSION);
          double maxPL = UST_GetCachedMaxProfit(ticket);
          if(floatingPL > maxPL)
             UST_SetCachedMaxProfit(ticket, floatingPL);
@@ -3660,6 +3672,47 @@ void United_ApplyTrailingStops()
                if(GRM_DebugLogs)
                   PrintFormat("[UST-DrawdownGuard] closed %s ticket %I64u at %.5f (maxPL=%.2f currPL=%.2f)",
                               symbol, ticket, (ptype == POSITION_TYPE_BUY ? bid : ask), maxPL, floatingPL);
+               continue;
+            }
+         }
+      }
+
+      // --- Time stop: close if the position has not moved into profit quickly ---
+      if(UST_TimeStopEnable)
+      {
+         if((TimeCurrent() - openTime) >= UST_TimeStopMinutes * 60 &&
+            floatingPL < UST_TimeStopMinProfitUSD)
+         {
+            CTrade closeTrade;
+            if(closeTrade.PositionClose(ticket))
+            {
+               if(GRM_DebugLogs)
+                  PrintFormat("[UST-TimeStop] closed %s ticket %I64u (openPL=%.2f after %d min)",
+                              symbol, ticket, floatingPL, UST_TimeStopMinutes);
+               continue;
+            }
+         }
+      }
+
+      // --- Hard max risk cap: close if floating loss exceeds the unified limit ---
+      if(UST_MaxRiskCapEnable && floatingPL < 0.0)
+      {
+         bool riskBreached = false;
+         double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+         if(UST_MaxRiskUSD > 0.0 && -floatingPL >= UST_MaxRiskUSD)
+            riskBreached = true;
+         if(!riskBreached && UST_MaxRiskPctBalance > 0.0 && balance > 0.0 &&
+            -floatingPL >= balance * UST_MaxRiskPctBalance / 100.0)
+            riskBreached = true;
+
+         if(riskBreached)
+         {
+            CTrade closeTrade;
+            if(closeTrade.PositionClose(ticket))
+            {
+               if(GRM_DebugLogs)
+                  PrintFormat("[UST-MaxRisk] closed %s ticket %I64u (PL=%.2f)",
+                              symbol, ticket, floatingPL);
                continue;
             }
          }
