@@ -237,15 +237,20 @@ input ENUM_UST_MODE UST_Mode = UST_MODE_ATR;
 input double UST_FixedActivationPoints = 200.0;
 input double UST_FixedTrailPoints    = 150.0;
 
-// ATR mode inputs
-input ENUM_TIMEFRAMES UST_ATRTimeframe = PERIOD_H1;
+// ATR mode inputs (M15 to react faster than the H1 bar-based entry strategies)
+input ENUM_TIMEFRAMES UST_ATRTimeframe = PERIOD_M15;
 input int    UST_ATRPeriod = 14;
-input double UST_ATRActivationMult = 1.0;    // position must be >= N*ATR in profit
-input double UST_ATRTrailMult      = 0.75;   // stop trails at N*ATR behind price
+input double UST_ATRActivationMult = 0.8;    // position must be >= 0.8*ATR in profit
+input double UST_ATRTrailMult      = 0.45;   // tighter trail behind price
 
 // Profit-R mode inputs
-input double UST_ProfitRActivation = 1.0;    // activate once unrealized profit >= risk * N
-input double UST_ProfitRTrailOffsetR = 0.0;  // place SL at entry + this * risk in profit direction
+input double UST_ProfitRActivation = 0.7;    // activate once unrealized profit >= 0.7*risk
+input double UST_ProfitRTrailOffsetR = 0.3;  // lock in 0.3*risk once activated
+
+// Floating-profit drawdown guard: closes profitable positions when unrealized
+// profit retraces too far from its tick-level high. Independent of H1 bars.
+input bool   UST_ProfitDrawdownGuard = true; // enable tick-level profit drawdown close
+input double UST_ProfitDrawdownPct = 30.0;   // close when floating profit falls to (100-X)% of its high
 
 //+------------------------------------------------------------------+
 //| Monthly Loss Breaker Softening (iter10E12)                       |
@@ -3544,15 +3549,63 @@ void OnTick()
 }
 
 //+------------------------------------------------------------------+
+//| Per-ticket high-water mark cache for profit drawdown guard        |
+//+------------------------------------------------------------------+
+struct UST_HighWaterMark { ulong ticket; double maxProfit; };
+static UST_HighWaterMark s_ustHighWater[];
+
+double UST_GetCachedMaxProfit(const ulong ticket)
+{
+   for(int i = ArraySize(s_ustHighWater) - 1; i >= 0; i--)
+      if(s_ustHighWater[i].ticket == ticket)
+         return s_ustHighWater[i].maxProfit;
+   return 0.0;
+}
+
+void UST_SetCachedMaxProfit(const ulong ticket, const double value)
+{
+   for(int i = ArraySize(s_ustHighWater) - 1; i >= 0; i--)
+   {
+      if(s_ustHighWater[i].ticket == ticket)
+      {
+         s_ustHighWater[i].maxProfit = value;
+         return;
+      }
+   }
+   int n = ArraySize(s_ustHighWater);
+   ArrayResize(s_ustHighWater, n + 1);
+   s_ustHighWater[n].ticket = ticket;
+   s_ustHighWater[n].maxProfit = value;
+}
+
+void UST_CleanHighWaterCache()
+{
+   int write = 0;
+   for(int i = 0; i < ArraySize(s_ustHighWater); i++)
+   {
+      if(PositionSelectByTicket(s_ustHighWater[i].ticket))
+      {
+         s_ustHighWater[write] = s_ustHighWater[i];
+         write++;
+      }
+   }
+   if(write != ArraySize(s_ustHighWater))
+      ArrayResize(s_ustHighWater, write);
+}
+
+//+------------------------------------------------------------------+
 //| Unified trailing stop manager (iter10E12)                        |
 //| Tightens stop-loss on open V4 positions whose strategies do not  |
-//| implement their own trailing stop. Only moves SL in the profitable |
-//| direction; never widens.                                         |
+//| implement their own trailing logic. Also adds a tick-level       |
+//| floating-profit drawdown guard to catch wrong-direction spikes   |
+//| that H1 bar-based trailing would miss.                           |
 //+------------------------------------------------------------------+
 void United_ApplyTrailingStops()
 {
    if(!UST_Enable)
       return;
+
+   UST_CleanHighWaterCache();
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
@@ -3591,6 +3644,26 @@ void United_ApplyTrailingStops()
       double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
       if(bid <= 0.0 || ask <= 0.0)
          continue;
+
+      // --- Tick-level floating-profit drawdown guard ---
+      if(UST_ProfitDrawdownGuard)
+      {
+         double floatingPL = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + PositionGetDouble(POSITION_COMMISSION);
+         double maxPL = UST_GetCachedMaxProfit(ticket);
+         if(floatingPL > maxPL)
+            UST_SetCachedMaxProfit(ticket, floatingPL);
+         else if(maxPL > 0.0 && floatingPL < maxPL * (1.0 - UST_ProfitDrawdownPct / 100.0))
+         {
+            CTrade closeTrade;
+            if(closeTrade.PositionClose(ticket))
+            {
+               if(GRM_DebugLogs)
+                  PrintFormat("[UST-DrawdownGuard] closed %s ticket %I64u at %.5f (maxPL=%.2f currPL=%.2f)",
+                              symbol, ticket, (ptype == POSITION_TYPE_BUY ? bid : ask), maxPL, floatingPL);
+               continue;
+            }
+         }
+      }
 
       double profitPoints = 0.0;
       double riskPoints = 0.0;
