@@ -129,7 +129,29 @@ bool InitWilliamsPassivation(WilliamsPassivationData& data, string symbol, ENUM_
       Print("WilliamsPassivation: Failed to create D1 EMA handle for ", symbol);
       return false;
    }
-   
+
+   // Warm-up retry: D1 bars may not be ready immediately after handle creation,
+   // especially during the first few ticks of a live session. Retry a few times
+   // before declaring the strategy initialized so the CopyBuffer hard-fail is avoided.
+   {
+      double warmup[];
+      ArraySetAsSeries(warmup, true);
+      int retry = 0;
+      bool ready = false;
+      while(retry < 5 && !ready)
+      {
+         if(CopyBuffer(data.ema_handle, 0, 0, 1, warmup) == 1 && warmup[0] > 0.0)
+            ready = true;
+         else
+         {
+            Sleep(100);
+            retry++;
+         }
+      }
+      if(!ready)
+         Print("WilliamsPassivation: D1 EMA handle created but data not yet ready for ", symbol, "; strategy will use fallback reads.");
+   }
+
    if(Filter_ATR_Enable)
    {
       data.atr_handle = iATR(symbol, TimeFrame, Filter_ATR_Period);
@@ -330,40 +352,60 @@ void ProcessWilliamsPassivation(WilliamsPassivationData& data, const string symb
    if(!((isBullPass && isBBBreakoutUp) || (isBearPass && isBBBreakoutDown)))
       return;
       
-   // Check D1 200 EMA Trend
-   double ema_d1[];
+   // Check D1 200 EMA Trend. Use shift=1 (closed bar) by preference, but fall back to
+   // shift=0 if the D1 history is not yet fully formed (e.g. first day of live trading).
+   // Never hard-return here; a missing D1 filter should skip the filter, not kill the tick.
+   double ema_d1[2];
    ArraySetAsSeries(ema_d1, true);
-   if(CopyBuffer(data.ema_handle, 0, 1, 2, ema_d1) < 2)
+   bool ema_ok = (CopyBuffer(data.ema_handle, 0, 1, 2, ema_d1) == 2);
+   if(!ema_ok)
    {
-      Print("WilliamsPassivation: CopyBuffer D1 EMA failed");
-      return;
+      double ema_now[1];
+      if(CopyBuffer(data.ema_handle, 0, 0, 1, ema_now) == 1 && ema_now[0] > 0.0)
+      {
+         ema_d1[0] = ema_now[0];
+         ema_d1[1] = ema_now[0];
+         ema_ok = true;
+      }
    }
-   
+
    double d1_close_array[];
-   if(CopyClose(symbol, PERIOD_D1, 1, 1, d1_close_array) != 1)
+   bool d1_close_ok = (CopyClose(symbol, PERIOD_D1, 1, 1, d1_close_array) == 1);
+   if(!d1_close_ok)
    {
-      Print("WilliamsPassivation: CopyClose D1 failed");
-      return;
+      // Fall back to current forming bar if closed bar unavailable
+      d1_close_ok = (CopyClose(symbol, PERIOD_D1, 0, 1, d1_close_array) == 1);
    }
-   double d1_close1 = d1_close_array[0];
-   
+   double d1_close1 = d1_close_ok ? d1_close_array[0] : 0.0;
+
    bool isTrendUp = true;
    bool isTrendDown = true;
-   
-   if(Filter_D1_EMA_Slope)
+
+   if((Filter_D1_EMA_Slope || Filter_D1_EMA_Price) && !ema_ok)
    {
-      if(ema_d1[0] <= ema_d1[1])
-         isTrendUp = false;
-      if(ema_d1[0] >= ema_d1[1])
-         isTrendDown = false;
+      // D1 EMA data unavailable: disable the D1 filter for this tick but keep running.
+      if(GRM_DebugLogs)
+         Print("WilliamsPassivation: D1 EMA data unavailable for ", symbol, "; skipping D1 trend filter this tick.");
+      isTrendUp = true;
+      isTrendDown = true;
    }
-   
-   if(Filter_D1_EMA_Price)
+   else
    {
-      if(d1_close1 <= ema_d1[0])
-         isTrendUp = false;
-      if(d1_close1 >= ema_d1[0])
-         isTrendDown = false;
+      if(Filter_D1_EMA_Slope)
+      {
+         if(ema_d1[0] <= ema_d1[1])
+            isTrendUp = false;
+         if(ema_d1[0] >= ema_d1[1])
+            isTrendDown = false;
+      }
+
+      if(Filter_D1_EMA_Price && d1_close_ok)
+      {
+         if(d1_close1 <= ema_d1[0])
+            isTrendUp = false;
+         if(d1_close1 >= ema_d1[0])
+            isTrendDown = false;
+      }
    }
    
    // Check ATR Volatility filter

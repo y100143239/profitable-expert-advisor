@@ -93,7 +93,7 @@ input double GRM_MonthlyLossLimitUSD = 0.0;
 // 0 = disabled. Threshold = free margin * pct / 100.
 input double GRM_MonthlyProfitTargetFreeMarginPct = 0.0;
 // 0 = disabled. Threshold = free margin * pct / 100.
-input double GRM_MonthlyLossLimitFreeMarginPct = 3.0;
+input double GRM_MonthlyLossLimitFreeMarginPct = 0.0;
 // Monthly-loss breaker recovery: 0 = legacy hard lock for the rest of the month;
 // >0 = re-arming cooldown (hours). After the limit is hit, entries pause for this
 // many hours then resume (within-month recovery), re-arming only if losses deepen
@@ -210,6 +210,55 @@ input double GRM_SymbolWinRateMinPct = 35.0;
 input int    GRM_SymbolWinRateCooldownBars = 24;
 input ENUM_TIMEFRAMES GRM_SymbolWinRateCooldownTimeframe = PERIOD_H1;
 input bool   GRM_DebugLogs = false;
+
+//+------------------------------------------------------------------+
+//| Unified Stop Trailing (iter10E12): real-time trailing stop for   |
+//| strategies that do NOT implement their own trailing logic. Runs  |
+//| once per tick after all strategies, tightens SL only, never      |
+//| widens it, and respects market-open hours to avoid retcode 1323. |
+//+------------------------------------------------------------------+
+input group "=== Unified Stop Trailing (iter10E12) ==="
+input bool   UST_Enable = true;              // master switch
+input int    UST_MinHoldMinutes = 5;         // ignore positions opened within last N minutes
+input string UST_SkipMagics = "12350,7,20001,20003,20004,129102315,125421321,123459123,20260524"; // strategies with own trailing
+input string UST_OnlyMagics = "";            // empty = all known V4 magics except SkipMagics
+input bool   UST_RespectMarketOpen = true;   // skip modification when symbol session is closed
+
+// Activation modes: price must move this far in profit before trailing begins.
+enum ENUM_UST_MODE
+{
+   UST_MODE_FIXED,   // fixed points activation + fixed points trail distance
+   UST_MODE_ATR,     // ATR-multiple activation + ATR-multiple trail distance
+   UST_MODE_PROFIT_R // move SL to entry + offset once position is in +N*risk profit
+};
+input ENUM_UST_MODE UST_Mode = UST_MODE_ATR;
+
+// Fixed-points mode inputs
+input double UST_FixedActivationPoints = 200.0;
+input double UST_FixedTrailPoints    = 150.0;
+
+// ATR mode inputs
+input ENUM_TIMEFRAMES UST_ATRTimeframe = PERIOD_H1;
+input int    UST_ATRPeriod = 14;
+input double UST_ATRActivationMult = 1.0;    // position must be >= N*ATR in profit
+input double UST_ATRTrailMult      = 0.75;   // stop trails at N*ATR behind price
+
+// Profit-R mode inputs
+input double UST_ProfitRActivation = 1.0;    // activate once unrealized profit >= risk * N
+input double UST_ProfitRTrailOffsetR = 0.0;  // place SL at entry + this * risk in profit direction
+
+//+------------------------------------------------------------------+
+//| Monthly Loss Breaker Softening (iter10E12)                       |
+//| Replace the crude "rest-of-month" hard lock with a recoverable   |
+//| throttle: after the loss threshold is hit, trading continues at  |
+//| reduced size for a cooldown window, then re-evaluates.            |
+//+------------------------------------------------------------------+
+input group "=== Monthly Loss Breaker Softening (iter10E12) ==="
+input bool   GRM_MonthlyLossSoftRecovery = true;   // true = throttle instead of hard month-lock
+input double GRM_MonthlyLossRecoveryThrottleFactor = 0.50; // lot multiplier while in recovery
+input int    GRM_MonthlyLossRecoveryCooldownHours = 24;    // minimum hours in throttle before re-arm
+input bool   GRM_MonthlyLossUseBalancePct = true;  // compute threshold as % of account balance
+input double GRM_MonthlyLossBalancePct = 5.0;      // default 5% of balance (was 3% free margin)
 
 bool United_IsKnownV4Magic(const ulong magic)
 {
@@ -418,6 +467,11 @@ double United_MonthlyLossThresholdUSD()
    {
       double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
       threshold = MathMax(threshold, freeMargin * GRM_MonthlyLossLimitFreeMarginPct / 100.0);
+   }
+   if(GRM_MonthlyLossUseBalancePct && GRM_MonthlyLossBalancePct > 0.0)
+   {
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      threshold = MathMax(threshold, balance * GRM_MonthlyLossBalancePct / 100.0);
    }
    return threshold;
 }
@@ -805,12 +859,29 @@ double United_PortfolioLossLotThrottleFactor()
    return factor;
 }
 
+double United_MonthlyLossRecoveryThrottleFactor()
+{
+   if(!GRM_Enable || !GRM_MonthlyLossSoftRecovery)
+      return 1.0;
+
+   datetime ms = United_MonthStart();
+   if(ms != g_MonthlyLossArmMonth)
+      return 1.0;  // new month, not yet armed
+
+   if(TimeCurrent() < g_MonthlyLossCooldownUntil)
+      return MathMax(0.0, GRM_MonthlyLossRecoveryThrottleFactor);
+
+   return 1.0;
+}
+
 double United_LotThrottleFactor(const string symbol, const ulong magic)
 {
    if(!GRM_Enable || !United_IsKnownV4Magic(magic))
       return 1.0;
 
    double factor = United_PortfolioLossLotThrottleFactor();
+   factor = MathMin(factor, United_MonthlyLossRecoveryThrottleFactor());
+
    if(GRM_MonthlyLossLotThrottleEnable
       && GRM_MonthlyLossLotThrottleUSD > 0.0
       && GRM_MonthlyLossLotThrottleFactor < factor
@@ -1276,6 +1347,48 @@ bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const 
             }
             // monthPL recovered above the arm level -> allow real trading
          }
+         else if(GRM_MonthlyLossSoftRecovery)
+         {
+            // Soft recovery mode (iter10E12): instead of a hard month-lock, throttle
+            // new entries to a reduced lot size for a cooldown window, then re-evaluate.
+            // This keeps the EA in the market and lets it recover from a single bad streak.
+            datetime ms = United_MonthStart();
+            if(ms != g_MonthlyLossArmMonth)   // new month -> reset breaker state
+            {
+               g_MonthlyLossArmMonth = ms;
+               g_MonthlyLossArmLevel = 0.0;
+               g_MonthlyLossCooldownUntil = 0;
+            }
+            datetime nowt = TimeCurrent();
+            // Arm the cooldown when we cross the threshold for the first time this episode,
+            // OR when losses have deepened by another full threshold since the last arm.
+            if(nowt >= g_MonthlyLossCooldownUntil && monthPL <= g_MonthlyLossArmLevel)
+            {
+               g_MonthlyLossCooldownUntil = nowt + (datetime)(GRM_MonthlyLossRecoveryCooldownHours * 3600.0);
+               g_MonthlyLossArmLevel = monthPL - monthlyLossThreshold;
+               PrintFormat("[MONTHLY-LOSS BREAKER] soft recovery ARMED for %s: monthPL=%.2f <= -%.2f limit | equity=%.2f freeMargin=%.2f | throttle %.0f%% for %dh until %s | re-arms if monthPL falls below %.2f",
+                           symbol, monthPL, monthlyLossThreshold, eqNow, fmNow,
+                           GRM_MonthlyLossRecoveryThrottleFactor * 100.0,
+                           GRM_MonthlyLossRecoveryCooldownHours,
+                           TimeToString(g_MonthlyLossCooldownUntil, TIME_DATE | TIME_MINUTES),
+                           g_MonthlyLossArmLevel);
+            }
+            // Still inside the cooldown window -> allow entry but at reduced size.
+            // The throttle is applied inside United_ScaledRiskLot via the new helper.
+            if(nowt < g_MonthlyLossCooldownUntil)
+            {
+               if(TimeCurrent() - g_MonthlyLossLastLog >= 3600)
+               {
+                  g_MonthlyLossLastLog = TimeCurrent();
+                  PrintFormat("[MONTHLY-LOSS BREAKER] soft recovery in progress for %s: monthPL=%.2f | entries throttled to %.0f%% until %s",
+                              symbol, monthPL,
+                              GRM_MonthlyLossRecoveryThrottleFactor * 100.0,
+                              TimeToString(g_MonthlyLossCooldownUntil, TIME_DATE | TIME_MINUTES));
+               }
+               // fall through: do NOT return false; allow entry at reduced size
+            }
+            // cooldown elapsed -> allow full-size entries again for a within-month recovery chance
+         }
          else if(GRM_MonthlyLossCooldownHours <= 0.0)
          {
             // Legacy hard block: no new entries for the rest of the calendar month.
@@ -1283,7 +1396,7 @@ bool United_GlobalRiskAllowsEntry(const string symbol, const ulong magic, const 
             if(TimeCurrent() - g_MonthlyLossLastLog >= 3600)
             {
                g_MonthlyLossLastLog = TimeCurrent();
-               PrintFormat("[MONTHLY-LOSS BREAKER] MONTH-LOCK active for %s: monthPL=%.2f <= -%.2f limit | equity=%.2f freeMargin=%.2f | NO new entries until next calendar month (set GRM_MonthlyLossCooldownHours>0 for recoverable cooldown)",
+               PrintFormat("[MONTHLY-LOSS BREAKER] MONTH-LOCK active for %s: monthPL=%.2f <= -%.2f limit | equity=%.2f freeMargin=%.2f | NO new entries until next calendar month (set GRM_MonthlyLossCooldownHours>0 or GRM_MonthlyLossSoftRecovery=true for recoverable cooldown)",
                            symbol, monthPL, monthlyLossThreshold, eqNow, fmNow);
             }
             return false;
@@ -3422,6 +3535,177 @@ void OnTick()
                                     base_lot, (int)magic, WP_Slippage, WP_MaxSpreadPoints,
                                     WP_UseTrailingStop, trail_dist, trail_act,
                                     WP_ExitOnPassivationEnd, sl, tp);
+      }
+   }
+
+   // Unified trailing stop for strategies without their own trailing logic.
+   // Runs after all strategy logic so every open position is re-evaluated each tick.
+   United_ApplyTrailingStops();
+}
+
+//+------------------------------------------------------------------+
+//| Unified trailing stop manager (iter10E12)                        |
+//| Tightens stop-loss on open V4 positions whose strategies do not  |
+//| implement their own trailing stop. Only moves SL in the profitable |
+//| direction; never widens.                                         |
+//+------------------------------------------------------------------+
+void United_ApplyTrailingStops()
+{
+   if(!UST_Enable)
+      return;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+
+      ulong magic = (ulong)PositionGetInteger(POSITION_MAGIC);
+      if(!United_IsKnownV4Magic(magic))
+         continue;
+      if(UST_OnlyMagics != "" && !United_MagicIsInCsv(magic, UST_OnlyMagics))
+         continue;
+      if(UST_SkipMagics != "" && United_MagicIsInCsv(magic, UST_SkipMagics))
+         continue;
+
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      if(UST_RespectMarketOpen && !IsSymbolMarketOpen(symbol))
+         continue;
+
+      // Skip positions opened very recently to avoid modifying SL on a just-filled order.
+      datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
+      if(UST_MinHoldMinutes > 0 && (TimeCurrent() - openTime) < UST_MinHoldMinutes * 60)
+         continue;
+
+      ENUM_POSITION_TYPE ptype = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double currentSL = PositionGetDouble(POSITION_SL);
+      double currentTP = PositionGetDouble(POSITION_TP);
+      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+      int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+      double tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+      if(point <= 0.0 || tickSize <= 0.0)
+         continue;
+
+      double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+      double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+      if(bid <= 0.0 || ask <= 0.0)
+         continue;
+
+      double profitPoints = 0.0;
+      double riskPoints = 0.0;
+      if(ptype == POSITION_TYPE_BUY)
+      {
+         profitPoints = (bid - openPrice) / point;
+         riskPoints = (openPrice - currentSL) / point;
+      }
+      else // SELL
+      {
+         profitPoints = (openPrice - ask) / point;
+         riskPoints = (currentSL - openPrice) / point;
+      }
+      if(riskPoints <= 0.0)
+         riskPoints = 0.0;
+
+      double activation = 0.0;
+      double trailDistance = 0.0;
+      bool activated = false;
+
+      if(UST_Mode == UST_MODE_FIXED)
+      {
+         activation = UST_FixedActivationPoints;
+         trailDistance = UST_FixedTrailPoints;
+         activated = (profitPoints >= activation);
+      }
+      else if(UST_Mode == UST_MODE_ATR)
+      {
+         int atrHandle = iATR(symbol, UST_ATRTimeframe, UST_ATRPeriod);
+         if(atrHandle == INVALID_HANDLE)
+            continue;
+         double atr[];
+         ArraySetAsSeries(atr, true);
+         if(CopyBuffer(atrHandle, 0, 1, 1, atr) != 1)
+         {
+            IndicatorRelease(atrHandle);
+            continue;
+         }
+         IndicatorRelease(atrHandle);
+         if(atr[0] <= 0.0)
+            continue;
+         activation = UST_ATRActivationMult * atr[0] / point;
+         trailDistance = UST_ATRTrailMult * atr[0] / point;
+         activated = (profitPoints >= activation);
+      }
+      else if(UST_Mode == UST_MODE_PROFIT_R)
+      {
+         activation = UST_ProfitRActivation * riskPoints;
+         trailDistance = -UST_ProfitRTrailOffsetR * riskPoints; // special: place SL at entry + offset
+         activated = (profitPoints >= activation && riskPoints > 0.0);
+      }
+
+      if(!activated)
+         continue;
+
+      double proposedSL = 0.0;
+      if(UST_Mode == UST_MODE_PROFIT_R)
+      {
+         if(ptype == POSITION_TYPE_BUY)
+            proposedSL = openPrice + UST_ProfitRTrailOffsetR * riskPoints * point;
+         else
+            proposedSL = openPrice - UST_ProfitRTrailOffsetR * riskPoints * point;
+      }
+      else
+      {
+         if(ptype == POSITION_TYPE_BUY)
+            proposedSL = bid - trailDistance * point;
+         else
+            proposedSL = ask + trailDistance * point;
+      }
+
+      // Normalize to tick size to avoid invalid stops
+      proposedSL = NormalizeDouble(MathRound(proposedSL / tickSize) * tickSize, digits);
+
+      // Do not move stop beyond current price (invalid) and never widen the stop.
+      if(ptype == POSITION_TYPE_BUY)
+      {
+         if(proposedSL >= bid)
+            continue;
+         if(currentSL > 0.0 && proposedSL <= currentSL)
+            continue;
+      }
+      else
+      {
+         if(proposedSL <= ask)
+            continue;
+         if(currentSL > 0.0 && proposedSL >= currentSL)
+            continue;
+      }
+
+      // Minimum stop distance check
+      long stopLevel = SymbolInfoInteger(symbol, SYMBOL_TRADE_STOPS_LEVEL);
+      double minDistance = stopLevel * point;
+      if(ptype == POSITION_TYPE_BUY)
+      {
+         if((bid - proposedSL) < minDistance)
+            proposedSL = NormalizeDouble(MathRound((bid - minDistance) / tickSize) * tickSize, digits);
+      }
+      else
+      {
+         if((proposedSL - ask) < minDistance)
+            proposedSL = NormalizeDouble(MathRound((ask + minDistance) / tickSize) * tickSize, digits);
+      }
+
+      CTrade trade;
+      if(!trade.PositionModify(ticket, proposedSL, currentTP))
+      {
+         if(GRM_DebugLogs)
+            PrintFormat("[UST] failed to modify SL for %s ticket %I64u magic=%I64u to %.5f (retcode=%d)",
+                        symbol, ticket, magic, proposedSL, trade.ResultRetcode());
+      }
+      else if(GRM_DebugLogs)
+      {
+         PrintFormat("[UST] moved SL for %s ticket %I64u magic=%I64u to %.5f (mode=%d profit=%.1fpts)",
+                     symbol, ticket, magic, proposedSL, UST_Mode, profitPoints);
       }
    }
 }
