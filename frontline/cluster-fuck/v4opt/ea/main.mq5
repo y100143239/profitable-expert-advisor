@@ -218,10 +218,10 @@ input bool   GRM_DebugLogs = false;
 //| widens it, and respects market-open hours to avoid retcode 1323. |
 //+------------------------------------------------------------------+
 input group "=== Unified Stop Trailing (iter10E12) ==="
-input bool   UST_Enable = true;              // master switch
+input bool   UST_Enable = true;              // protect every known strategy on every tick
 input int    UST_MinHoldMinutes = 5;         // ignore positions opened within last N minutes
-input string UST_SkipMagics = "12350,7,20001,20003,20004,129102315,125421321,123459123,20260524"; // strategies with own trailing
-input string UST_OnlyMagics = "";            // empty = all known V4 magics except SkipMagics
+input string UST_SkipMagics = "";            // apply the unified guard to strategy-native trailing too
+input string UST_OnlyMagics = "20004,20003,20001,125421321"; // high-risk RSI scalping magics from live history
 input bool   UST_RespectMarketOpen = true;   // skip modification when symbol session is closed
 
 // Activation modes: price must move this far in profit before trailing begins.
@@ -262,8 +262,8 @@ input double UST_TimeStopMinProfitUSD = 0.0; // position must reach at least thi
 // USD amount or percentage of account balance, regardless of original SL.
 // Disabled by default to preserve profit potential; enable only if you want a
 // hard per-position ceiling tighter than the original stop-loss.
-input bool   UST_MaxRiskCapEnable = false;   // enforce a unified maximum loss per position
-input double UST_MaxRiskUSD = 200.0;         // absolute max floating loss per position
+input bool   UST_MaxRiskCapEnable = true;    // enforce a unified maximum loss per high-risk scalping position
+input double UST_MaxRiskUSD = 250.0;         // absolute max floating loss per position
 input double UST_MaxRiskPctBalance = 0.0;    // max floating loss as % of balance (0=disable)
 
 //+------------------------------------------------------------------+
@@ -2174,6 +2174,13 @@ input int                 WP_MagicNumber = 20260524;
 input int                 WP_Slippage = 10;
 input int                 WP_MaxSpreadPoints = 30;
 
+// Runtime symbol leverage is inferred from broker margin for one lot so the
+// sizing adapts to symbol-specific leverage tiers and contract specifications.
+input bool   URF_LeverageAwareEnable = true;
+input double URF_ReferenceLeverage = 1000.0;
+input double URF_MinLeverageScale = 0.25;
+input double URF_MaxLeverageScale = 1.25;
+
 //+------------------------------------------------------------------+
 //| Dynamic Strategy Regime and Margin utilization Regulator         |
 //+------------------------------------------------------------------+
@@ -2806,6 +2813,85 @@ double United_ScaledLot(const double baseLot)
    return (lot > 0.0 ? lot : 0.0);
 }
 
+//+------------------------------------------------------------------+
+//| Broker-calculated margin cap for a proposed symbol volume.       |
+//| OrderCalcMargin includes the broker's current symbol-specific    |
+//| leverage tier, contract size, and account-currency conversion.   |
+//+------------------------------------------------------------------+
+double United_SymbolMarginCappedLot(const double requestedLot, const string symbol)
+{
+   if(requestedLot <= 0.0 || !URF_Enable || !SymbolSelect(symbol, true))
+      return requestedLot;
+
+   double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+   if(ask <= 0.0 || bid <= 0.0)
+      return 0.0;
+
+   double buyMargin = 0.0;
+   double sellMargin = 0.0;
+   bool buyOk = OrderCalcMargin(ORDER_TYPE_BUY, symbol, requestedLot, ask, buyMargin);
+   bool sellOk = OrderCalcMargin(ORDER_TYPE_SELL, symbol, requestedLot, bid, sellMargin);
+   if(!buyOk && !sellOk)
+      return 0.0;
+
+   double requiredMargin = MathMax(buyOk ? buyMargin : 0.0, sellOk ? sellMargin : 0.0);
+   if(requiredMargin <= 0.0)
+      return requestedLot;
+
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double usedMargin = AccountInfoDouble(ACCOUNT_MARGIN);
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(equity <= 0.0 || freeMargin <= 0.0)
+      return 0.0;
+
+   // Keep the candidate order inside both the total margin-load cap and the
+   // minimum margin-level floor. This uses actual per-symbol broker margin.
+   double loadBudget = equity * URF_MaxMarginLoadPct / 100.0 - usedMargin;
+   double levelBudget = equity * 100.0 / URF_MinMarginLevelPct - usedMargin;
+   double marginBudget = MathMin(freeMargin, MathMin(loadBudget, levelBudget));
+   if(marginBudget <= 0.0)
+      return 0.0;
+   if(requiredMargin <= marginBudget)
+      return requestedLot;
+
+   double step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   if(step <= 0.0 || minLot <= 0.0)
+      return 0.0;
+
+   double cappedLot = MathFloor(requestedLot * marginBudget / requiredMargin / step) * step;
+   cappedLot = NormalizeDouble(cappedLot, (int)MathRound(-MathLog10(step)));
+   if(cappedLot < minLot)
+      return 0.0;
+
+   if(GRM_DebugLogs)
+      PrintFormat("[URF-SymbolMargin] %s lot %.4f -> %.4f; broker margin %.2f, budget %.2f",
+                  symbol, requestedLot, cappedLot, requiredMargin, marginBudget);
+   return cappedLot;
+}
+
+double United_RuntimeLeverageScale(const string symbol)
+{
+   if(!URF_LeverageAwareEnable || URF_ReferenceLeverage <= 0.0 || !SymbolSelect(symbol, true))
+      return 1.0;
+
+   double price = MathMax(SymbolInfoDouble(symbol, SYMBOL_ASK), SymbolInfoDouble(symbol, SYMBOL_BID));
+   double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   double margin = 0.0;
+   if(price <= 0.0 || contractSize <= 0.0 || !OrderCalcMargin(ORDER_TYPE_BUY, symbol, 1.0, price, margin) || margin <= 0.0)
+      return MathMax(0.0, URF_MinLeverageScale);
+
+   double effectiveLeverage = (contractSize * price) / margin;
+   double scale = effectiveLeverage / URF_ReferenceLeverage;
+   scale = MathMax(URF_MinLeverageScale, MathMin(URF_MaxLeverageScale, scale));
+
+   if(GRM_DebugLogs)
+      PrintFormat("[URF-Leverage] %s effective=%.1f reference=%.1f scale=%.3f margin1lot=%.2f",
+                  symbol, effectiveLeverage, URF_ReferenceLeverage, scale, margin);
+   return scale;
+}
+
 double United_ScaledRiskLot(const double baseLot, const string symbol, const ulong magic)
 {
    double lot = United_ScaledLot(baseLot) 
@@ -2813,8 +2899,9 @@ double United_ScaledRiskLot(const double baseLot, const string symbol, const ulo
               * United_CachedPerfMultiplier(magic)
               * United_PrincipalGuardScale()
               * United_RegimeSizeFactor(symbol)
+              * United_RuntimeLeverageScale(symbol)
               * g_CachedMarginScale;
-   return (lot > 0.0 ? lot : 0.0);
+   return United_SymbolMarginCappedLot(lot, symbol);
 }
 
 void United_RefreshScaledLots()

@@ -249,6 +249,18 @@ void CheckExistingPositionWP(WilliamsPassivationData& data, int MagicNumber)
 //+------------------------------------------------------------------+
 //| Core strategy iteration loop                                     |
 //+------------------------------------------------------------------+
+bool WP_RebuildD1EMAHandle(WilliamsPassivationData& data, const int emaPeriod,
+                           const ENUM_APPLIED_PRICE appliedPrice)
+{
+   if(data.ema_handle != INVALID_HANDLE)
+      IndicatorRelease(data.ema_handle);
+   data.ema_handle = iMA(data.symbol, PERIOD_D1, emaPeriod, 0, MODE_EMA, appliedPrice);
+   if(data.ema_handle == INVALID_HANDLE)
+      return false;
+
+   return BarsCalculated(data.ema_handle) > 0;
+}
+
 void ProcessWilliamsPassivation(WilliamsPassivationData& data, const string symbol, ENUM_TIMEFRAMES TimeFrame,
                                 int WPR_Period, int PassivationBars, double WPR_Overbought, double WPR_Oversold,
                                 int BB_Period, double BB_Deviation, ENUM_APPLIED_PRICE BB_AppliedPrice,
@@ -360,6 +372,13 @@ void ProcessWilliamsPassivation(WilliamsPassivationData& data, const string symb
    bool ema_ok = (CopyBuffer(data.ema_handle, 0, 1, 2, ema_d1) == 2);
    if(!ema_ok)
    {
+      // A live terminal can invalidate or starve a long-lived D1 handle after
+      // reconnects/history refreshes. Rebuild it once before falling back.
+      if(WP_RebuildD1EMAHandle(data, EMA_Period, EMA_AppliedPrice))
+         ema_ok = (CopyBuffer(data.ema_handle, 0, 1, 2, ema_d1) == 2);
+      }
+      if(!ema_ok)
+      {
       double ema_now[1];
       if(CopyBuffer(data.ema_handle, 0, 0, 1, ema_now) == 1 && ema_now[0] > 0.0)
       {
