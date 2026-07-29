@@ -1571,6 +1571,20 @@ input double ORCH_ReferenceBalance = 3000.0;
 input double ORCH_MinBalanceScale = 0.1;
 input double ORCH_MaxBalanceScale = 10.0;
 
+// Dave Teaches "only scale on account milestones": instead of continuous linear
+// balance scaling, quantize the lot factor into discrete equity milestones. Size
+// steps up only after the account banks another EMG_StepUSD, and (when equity-based)
+// steps DOWN through the same milestones during drawdowns, de-risking decisively
+// rather than continuously. Opt-in; when disabled the legacy continuous scaling is
+// used, so defaults are unchanged.
+input group "=== Equity-Milestone Lot Governor (Dave-style) ==="
+input bool   EMG_Enable = false;         // replace continuous scaling with milestone tiers
+input double EMG_StepUSD = 1000.0;       // account growth per lot milestone
+input double EMG_BaseEquityUSD = 0.0;    // 0 = use ORCH_ReferenceBalance as the base tier
+input bool   EMG_UseEquity = true;       // true = equity (drawdown-aware); false = balance
+input double EMG_MaxFactor = 10.0;       // upper clamp on the milestone factor
+input double EMG_MinFactor = 0.1;        // lower clamp on the milestone factor
+
 //+------------------------------------------------------------------+
 //| Unified Risk Facade (v4opt Phase 1)                              |
 //| One margin-aware multiplier that REPLACES the blind DD-only      |
@@ -2819,9 +2833,37 @@ double United_BalanceScaleFactor()
    return raw;
 }
 
+//+------------------------------------------------------------------+
+//| Dave-style equity-milestone lot factor. Returns -1.0 when the    |
+//| governor is disabled so callers fall back to continuous scaling. |
+//| Quantizes the factor into whole EMG_StepUSD tiers relative to a   |
+//| base tier; equity mode makes it step down during drawdowns.      |
+//+------------------------------------------------------------------+
+double United_EquityMilestoneFactor()
+{
+   if(!EMG_Enable || EMG_StepUSD <= 0.0)
+      return -1.0;
+   double base = (EMG_BaseEquityUSD > 0.0 ? EMG_BaseEquityUSD : ORCH_ReferenceBalance);
+   if(base <= 0.0)
+      return -1.0;
+   double money = EMG_UseEquity ? AccountInfoDouble(ACCOUNT_EQUITY)
+                                : AccountInfoDouble(ACCOUNT_BALANCE);
+   double baseTiers = MathFloor(base / EMG_StepUSD);
+   if(baseTiers < 1.0) baseTiers = 1.0;
+   double tiers = MathFloor(money / EMG_StepUSD);
+   if(tiers < 1.0) tiers = 1.0;
+   double f = tiers / baseTiers;
+   if(f < EMG_MinFactor) f = EMG_MinFactor;
+   if(f > EMG_MaxFactor) f = EMG_MaxFactor;
+   return f;
+}
+
 double United_ScaledLot(const double baseLot)
 {
-   const double lot = baseLot * United_BalanceScaleFactor();
+   double factor = United_EquityMilestoneFactor();
+   if(factor < 0.0)                       // governor disabled -> legacy continuous scaling
+      factor = United_BalanceScaleFactor();
+   const double lot = baseLot * factor;
    return (lot > 0.0 ? lot : 0.0);
 }
 
