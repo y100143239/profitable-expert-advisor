@@ -253,15 +253,18 @@ input bool   UST_ProfitDrawdownGuard = true; // enable tick-level profit drawdow
 input double UST_ProfitDrawdownPct = 30.0;   // close when floating profit falls to (100-X)% of its high
 
 // Time stop: close positions that never move into profit quickly enough.
-input bool   UST_TimeStopEnable = true;      // close if position has not reached min profit within N minutes
-input int    UST_TimeStopMinutes = 30;       // maximum minutes to wait for profit
-input double UST_TimeStopMinProfitUSD = 1.0; // position must reach at least this much profit or be closed
+// Disabled by default because H1 strategies often need >30 min to develop.
+input bool   UST_TimeStopEnable = false;     // close if position has not reached min profit within N minutes
+input int    UST_TimeStopMinutes = 240;      // maximum minutes to wait for profit
+input double UST_TimeStopMinProfitUSD = 0.0; // position must reach at least this much profit or be closed
 
 // Hard maximum risk cap: closes positions whose floating loss exceeds a fixed
 // USD amount or percentage of account balance, regardless of original SL.
-input bool   UST_MaxRiskCapEnable = true;    // enforce a unified maximum loss per position
-input double UST_MaxRiskUSD = 50.0;          // absolute max floating loss per position
-input double UST_MaxRiskPctBalance = 2.0;    // max floating loss as % of balance (0=disable)
+// Disabled by default to preserve profit potential; enable only if you want a
+// hard per-position ceiling tighter than the original stop-loss.
+input bool   UST_MaxRiskCapEnable = false;   // enforce a unified maximum loss per position
+input double UST_MaxRiskUSD = 200.0;         // absolute max floating loss per position
+input double UST_MaxRiskPctBalance = 0.0;    // max floating loss as % of balance (0=disable)
 
 //+------------------------------------------------------------------+
 //| Monthly Loss Breaker Softening (iter10E12)                       |
