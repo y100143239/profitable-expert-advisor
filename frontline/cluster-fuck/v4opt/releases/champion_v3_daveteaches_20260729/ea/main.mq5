@@ -30,6 +30,8 @@ input double DT_RiskPerTradePct = 2.0;        // 1-2% conservative; Dave used 3-
 input double DT_DailyLossLimitPct = 5.0;      // 0 = disabled
 input double DT_AccountStageUSD = 0.0;        // 0 = disabled; else min equity stage
 input double DT_MaxMarginLoadPct = 10.0;      // broker-aware cap for one new position
+input double DT_MaxPositionLossPct = 2.0;     // emergency floating-loss cap per position
+input double DT_MaxEquityDrawdownPct = 10.0;  // emergency account high-water cap
 
 input group "=== Entry Models ==="
 input bool   DT_EnableRetracementEntry = true;
@@ -58,6 +60,7 @@ CTrade   g_trade;
 datetime g_lastBarTime = 0;
 datetime g_lastTradeTime = 0;
 int      g_lastTradeBarCount = 0;
+double   g_equityPeak = 0.0;
 
 //+------------------------------------------------------------------+
 //| Expert initialization                                              |
@@ -81,6 +84,7 @@ int OnInit()
    g_trade.SetDeviationInPoints(DT_Slippage);
    g_trade.SetTypeFilling(ORDER_FILLING_IOC);
    g_trade.SetAsyncMode(false);
+   g_equityPeak = AccountInfoDouble(ACCOUNT_EQUITY);
 
    Print("DaveTeachesEA initialized on ", g_symbol);
    return INIT_SUCCEEDED;
@@ -110,6 +114,34 @@ void DT_CloseAll(const string reason)
       g_trade.PositionClose(ticket);
       Print("DaveTeachesEA close: ", reason, " ticket=", ticket);
    }
+}
+
+bool DT_EmergencyProtection(const ulong ticket)
+{
+   if(!PositionSelectByTicket(ticket))
+      return false;
+
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity > g_equityPeak)
+      g_equityPeak = equity;
+
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double floating = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+   bool positionBreach = DT_MaxPositionLossPct > 0.0 && balance > 0.0
+                         && floating <= -balance * DT_MaxPositionLossPct / 100.0;
+   bool accountBreach = DT_MaxEquityDrawdownPct > 0.0 && g_equityPeak > 0.0
+                        && equity <= g_equityPeak * (1.0 - DT_MaxEquityDrawdownPct / 100.0);
+   if(!positionBreach && !accountBreach)
+      return false;
+
+   if(accountBreach)
+      DT_CloseAll("equity drawdown emergency");
+   else
+      g_trade.PositionClose(ticket);
+   PrintFormat("DaveTeachesEA emergency exit: position=%s account=%s equity=%.2f peak=%.2f floating=%.2f",
+               positionBreach ? "true" : "false", accountBreach ? "true" : "false",
+               equity, g_equityPeak, floating);
+   return true;
 }
 
 //+------------------------------------------------------------------+
@@ -197,6 +229,8 @@ void OnTick()
       ulong ticket = GetPositionTicketByMagic(g_symbol, DT_MagicNumber);
       if(ticket > 0)
       {
+         if(DT_EmergencyProtection(ticket))
+            return;
          DT_ApplyTrailingStop(ticket, DT_TrailMode,
                               DT_CandleTrailLookback, DT_SwingTrailLookback,
                               true);
