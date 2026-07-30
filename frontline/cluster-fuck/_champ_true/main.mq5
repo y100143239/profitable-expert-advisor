@@ -155,6 +155,22 @@ input string RQE_Magics = "";            // CSV scope; "" = all known V4 magics
 input double RQE_AdverseATRMult = 0.25;  // close when underwater >= this * D1 ATR
 input ENUM_TIMEFRAMES RQE_FastTimeframe = 0;   // 0 = off; e.g. PERIOD_H4 to also cut wrong-on-faster-trend runaways
 input double RQE_FastAdverseATRMult = 1.5;     // adverse (in D1 ATR) needed for a fast-TF counter-trend cut
+// Stuck-position time exit (减少无效扈单): close positions that have sat in a
+// floating loss beyond SPTE_MaxHoldMinutes AND are underwater >= SPTE_MinAdverseATRMult*ATR.
+// This targets the "trade went wrong and was left to bleed" case (Dave: do not hold floating
+// losses for long). Default OFF (opt-in until validated on real ticks).
+input bool   SPTE_Enable = false;
+input int    SPTE_MaxHoldMinutes = 240;        // close floating-loss positions held longer than this
+input double SPTE_MinAdverseATRMult = 0.5;     // only if underwater >= this * ATR (skip near-breakeven)
+input string SPTE_Magics = "";                  // CSV scope; "" = all known V4 magics
+// Early adverse stop (开仓即错实时止损): if a position is underwater by >= EAS_AdverseATRMult*ATR
+// WITHIN the first EAS_WindowMinutes of its life, the entry was wrong from the start -> cut it
+// immediately, regardless of D1 regime. Targets the live "开仓即错未实时止损" complaint. Distinct
+// from RQE (counter-regime only) and SPTE (slow time-exit). Default OFF (opt-in until validated).
+input bool   EAS_Enable = false;
+input int    EAS_WindowMinutes = 30;           // only act within the first N minutes after entry
+input double EAS_AdverseATRMult = 1.0;         // cut if adverse excursion >= this * ATR inside the window
+input string EAS_Magics = "";                   // CSV scope; "" = all known V4 magics
 input bool   GRM_ConsecutiveLossCooldownEnable = false;
 input int    GRM_ConsecutiveLossCount = 3;
 input int    GRM_ConsecutiveLossLookbackDays = 30;
@@ -1003,6 +1019,112 @@ void United_RegimeQuickExit()
 }
 
 //+------------------------------------------------------------------+
+//| Stuck-position time exit: close any EA position that has sat in a |
+//| floating loss longer than SPTE_MaxHoldMinutes while underwater by  |
+//| at least SPTE_MinAdverseATRMult * ATR. Targets "trade went wrong    |
+//| and was left to bleed" (套牢扈单). With-trend winners and near-      |
+//| breakeven positions are left alone. Default OFF (opt-in).          |
+//+------------------------------------------------------------------+
+void United_StuckPositionTimeExit()
+{
+   if(!SPTE_Enable || SPTE_MaxHoldMinutes <= 0) return;
+
+   long maxHoldSec = (long)SPTE_MaxHoldMinutes * 60;
+   datetime now = TimeCurrent();
+   CTrade spteTrade;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket)) continue;
+      ulong magic = (ulong)PositionGetInteger(POSITION_MAGIC);
+      if(!United_IsKnownV4Magic(magic)) continue;
+      if(SPTE_Magics != "" && !United_MagicIsInCsv(magic, SPTE_Magics)) continue;
+
+      // Only positions in a floating loss are candidates.
+      double profit = PositionGetDouble(POSITION_PROFIT)
+                    + PositionGetDouble(POSITION_SWAP);
+      if(profit >= 0.0) continue;
+
+      long held = (long)(now - (datetime)PositionGetInteger(POSITION_TIME));
+      if(held < maxHoldSec) continue;  // not stuck long enough yet
+
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      double openPx = PositionGetDouble(POSITION_PRICE_OPEN);
+      double curPx  = isBuy ? SymbolInfoDouble(symbol, SYMBOL_BID)
+                            : SymbolInfoDouble(symbol, SYMBOL_ASK);
+      if(openPx <= 0.0 || curPx <= 0.0) continue;
+      double adverse = isBuy ? (openPx - curPx) : (curPx - openPx);
+      if(adverse <= 0.0) continue;  // priced back to breakeven -> let it be
+
+      if(SPTE_MinAdverseATRMult > 0.0)
+      {
+         int atrHandle = iATR(symbol, GRM_TrendAlignTimeframe, GRM_TrendAlignATRPeriod);
+         if(atrHandle == INVALID_HANDLE) continue;
+         double atr[];
+         ArraySetAsSeries(atr, true);
+         bool atrOk = (CopyBuffer(atrHandle, 0, 1, 1, atr) == 1);
+         IndicatorRelease(atrHandle);
+         if(!atrOk || atr[0] <= 0.0) continue;
+         if(adverse < SPTE_MinAdverseATRMult * atr[0]) continue;  // shallow loss -> keep
+      }
+
+      PrintFormat("[STUCK TIME-EXIT] closing %s ticket %I64u magic=%I64u: held %ld min, floatPnL %.2f, adverse %.5f",
+                  symbol, ticket, magic, held / 60, profit, adverse);
+      spteTrade.PositionClose(ticket);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Early adverse stop: cut positions that are wrong FROM ENTRY. Only  |
+//| within the first EAS_WindowMinutes of a position's life; if its    |
+//| adverse excursion already exceeds EAS_AdverseATRMult * ATR the      |
+//| entry was a mistake -> close now, regardless of regime. Winners and |
+//| positions that stay near breakeven early are untouched. Opt-in.     |
+//+------------------------------------------------------------------+
+void United_EarlyAdverseStop()
+{
+   if(!EAS_Enable || EAS_WindowMinutes <= 0 || EAS_AdverseATRMult <= 0.0) return;
+
+   long windowSec = (long)EAS_WindowMinutes * 60;
+   datetime now = TimeCurrent();
+   CTrade easTrade;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket)) continue;
+      ulong magic = (ulong)PositionGetInteger(POSITION_MAGIC);
+      if(!United_IsKnownV4Magic(magic)) continue;
+      if(EAS_Magics != "" && !United_MagicIsInCsv(magic, EAS_Magics)) continue;
+
+      long held = (long)(now - (datetime)PositionGetInteger(POSITION_TIME));
+      if(held > windowSec) continue;  // past the early-entry window -> not our job
+
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      double openPx = PositionGetDouble(POSITION_PRICE_OPEN);
+      double curPx  = isBuy ? SymbolInfoDouble(symbol, SYMBOL_BID)
+                            : SymbolInfoDouble(symbol, SYMBOL_ASK);
+      if(openPx <= 0.0 || curPx <= 0.0) continue;
+      double adverse = isBuy ? (openPx - curPx) : (curPx - openPx);
+      if(adverse <= 0.0) continue;  // not underwater -> entry not (yet) wrong
+
+      int atrHandle = iATR(symbol, GRM_TrendAlignTimeframe, GRM_TrendAlignATRPeriod);
+      if(atrHandle == INVALID_HANDLE) continue;
+      double atr[];
+      ArraySetAsSeries(atr, true);
+      bool atrOk = (CopyBuffer(atrHandle, 0, 1, 1, atr) == 1);
+      IndicatorRelease(atrHandle);
+      if(!atrOk || atr[0] <= 0.0) continue;
+      if(adverse < EAS_AdverseATRMult * atr[0]) continue;  // within normal entry noise -> keep
+
+      PrintFormat("[EARLY ADVERSE STOP] closing %s ticket %I64u magic=%I64u: held %ld min, adverse %.5f >= %.2f*ATR %.5f",
+                  symbol, ticket, magic, held / 60, adverse, EAS_AdverseATRMult, atr[0]);
+      easTrade.PositionClose(ticket);
+   }
+}
+
+//+------------------------------------------------------------------+
 //| Virtual Recovery Probe helpers. The shadow book records would-be |
 //| entries while the monthly-loss breaker is tripped, resolves them |
 //| against a short-horizon ATR TP/SL, and resumes REAL trading once |
@@ -1401,6 +1523,19 @@ input double URF_MinMarginLevelPct  = 300.0;  // floor equity / used-margin * 10
 input double URF_SoftBreakerDDPct   = 8.0;    // equity DD from peak to begin throttling (%)
 input double URF_HardBreakerDDPct   = 20.0;   // equity DD from peak -> near-zero new exposure (%)
 input double URF_MinScale           = 0.05;   // never fully zero new exposure
+// Per-symbol leverage-aware sizing (动态仓位控制): normalize each position's margin
+// footprint by the symbol's real-time required margin per lot, so high-margin (low-
+// leverage) instruments size DOWN (blowup guard) and low-margin (high-leverage) ones
+// can size UP modestly (capped). Default OFF (neutral 1.0x -> champion preserved).
+input bool   URF_LeverageAwareEnable = false;
+input double URF_LeverageRefMarginUSD = 0.0;   // reference margin-per-lot USD; 0 = auto (per-tick portfolio anchor)
+input double URF_LeverageMaxBoost    = 2.0;    // cap the per-symbol size-up multiplier
+input double URF_LeverageMinScale    = 0.25;   // floor the per-symbol size-down multiplier
+// Equity/balance amplification gate: amplify new exposure ONLY when equity > balance;
+// throttle it when equity < balance (只在净值大于余额时放大仓位). Default OFF (neutral).
+input bool   URF_EquityGateEnable    = false;
+input double URF_EquityGateBelowScale = 0.5;   // multiplier applied when equity < balance (risk control)
+input double URF_EquityGateAboveBoost = 1.0;   // multiplier when equity >= balance (1.0 = neutral; >1 amplifies)
 
 //+------------------------------------------------------------------+
 //| Portfolio Equity Stop (Phase 1b) — the real equity-DD gate       |
@@ -2292,6 +2427,54 @@ double United_RiskFacadeScale()
 }
 
 //+------------------------------------------------------------------+
+//| Per-symbol leverage-aware lot multiplier. Uses OrderCalcMargin to |
+//| read the LIVE required margin per 1.0 lot for this symbol (which   |
+//| reflects the broker's real-time per-symbol leverage), then scales  |
+//| toward a common margin footprint: low-leverage/high-margin symbols |
+//| size DOWN (blowup guard), high-leverage/low-margin symbols size UP  |
+//| modestly. Clamped to [URF_LeverageMinScale .. URF_LeverageMaxBoost].|
+//| Returns 1.0 (neutral) when disabled or margin cannot be read.       |
+//+------------------------------------------------------------------+
+double United_LeverageAwareScale(const string symbol)
+{
+   if(!URF_LeverageAwareEnable) return 1.0;
+
+   double px = SymbolInfoDouble(symbol, SYMBOL_ASK);
+   if(px <= 0.0) px = SymbolInfoDouble(symbol, SYMBOL_BID);
+   if(px <= 0.0) return 1.0;
+
+   double marginPerLot = 0.0;
+   if(!OrderCalcMargin(ORDER_TYPE_BUY, symbol, 1.0, px, marginPerLot) || marginPerLot <= 0.0)
+      return 1.0;
+
+   // Reference anchor: explicit USD, or auto = a fixed fraction of current equity so
+   // the normalization tracks account size in real time.
+   double refMargin = URF_LeverageRefMarginUSD;
+   if(refMargin <= 0.0)
+      refMargin = MathMax(1.0, AccountInfoDouble(ACCOUNT_EQUITY) * 0.01);
+
+   double scale = refMargin / marginPerLot;
+   if(scale > URF_LeverageMaxBoost) scale = URF_LeverageMaxBoost;
+   if(scale < URF_LeverageMinScale) scale = URF_LeverageMinScale;
+   return scale;
+}
+
+//+------------------------------------------------------------------+
+//| Equity/balance amplification gate. Amplify new exposure only when  |
+//| equity >= balance; throttle it when equity < balance. Returns 1.0  |
+//| (neutral) when disabled.                                           |
+//+------------------------------------------------------------------+
+double United_EquityBalanceGate()
+{
+   if(!URF_EquityGateEnable) return 1.0;
+   double equity  = AccountInfoDouble(ACCOUNT_EQUITY);
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(equity < balance)
+      return MathMax(0.0, URF_EquityGateBelowScale);
+   return MathMax(0.0, URF_EquityGateAboveBoost);
+}
+
+//+------------------------------------------------------------------+
 //| Count consecutive losing CLOSED EA trades, newest-first, within   |
 //| a recent window. The streak ends at the first non-losing trade.   |
 //+------------------------------------------------------------------+
@@ -2639,6 +2822,8 @@ double United_ScaledRiskLot(const double baseLot, const string symbol, const ulo
               * United_LotThrottleFactor(symbol, magic)
               * United_CachedPerfMultiplier(magic)
               * United_PrincipalGuardScale()
+              * United_LeverageAwareScale(symbol)
+              * United_EquityBalanceGate()
               * g_CachedMarginScale;
    return (lot > 0.0 ? lot : 0.0);
 }
@@ -3254,6 +3439,12 @@ void OnTick()
 
    // Regime quick-exit: cap counter-trend runaways (opt-in, default off).
    United_RegimeQuickExit();
+
+   // Stuck-position time exit: close floating-loss positions left to bleed (opt-in, default off).
+   United_StuckPositionTimeExit();
+
+   // Early adverse stop: cut wrong-from-entry positions fast (opt-in, default off).
+   United_EarlyAdverseStop();
 
    // Virtual Recovery Probe: resolve shadow trades + resume real trading on recovery.
    United_VirtualRecoveryManage();
