@@ -108,9 +108,9 @@ input double GRM_MonthlyLossCooldownHours = 0.0;
 // VRP_ResumeWinRate over >= VRP_ProbeTrades closed virtual trades, net non-
 // negative), REAL trading resumes (re-arming only if losses deepen another full
 // threshold). This recovers trading time on real signal-quality evidence rather
-// than a clock. Default OFF (opt-in until validated). Takes precedence over the
-// timed cooldown when enabled.
-input bool   VRP_Enable = false;
+// than a clock. Default ON: validated champion-beater (Model=4 real ticks).
+// Takes precedence over the timed cooldown when enabled.
+input bool   VRP_Enable = true;
 input ENUM_TIMEFRAMES VRP_ATRTimeframe = PERIOD_H1;  // horizon for virtual TP/SL
 input int    VRP_ATRPeriod = 14;
 input double VRP_VirtualTPATR = 1.0;   // virtual take-profit in ATR
@@ -166,8 +166,8 @@ input string SPTE_Magics = "";                  // CSV scope; "" = all known V4 
 // Early adverse stop (开仓即错实时止损): if a position is underwater by >= EAS_AdverseATRMult*ATR
 // WITHIN the first EAS_WindowMinutes of its life, the entry was wrong from the start -> cut it
 // immediately, regardless of D1 regime. Targets the live "开仓即错未实时止损" complaint. Distinct
-// from RQE (counter-regime only) and SPTE (slow time-exit). Default OFF (opt-in until validated).
-input bool   EAS_Enable = false;
+// from RQE (counter-regime only) and SPTE (slow time-exit). Default ON: validated on real ticks.
+input bool   EAS_Enable = true;
 input int    EAS_WindowMinutes = 30;           // only act within the first N minutes after entry
 input double EAS_AdverseATRMult = 1.0;         // cut if adverse excursion >= this * ATR inside the window
 input string EAS_Magics = "";                   // CSV scope; "" = all known V4 magics
@@ -1469,7 +1469,7 @@ input bool EnableRSIScalpingBTCUSD = true;
 input bool EnableRSIScalpingNVDA = true;
 input bool EnableRSIScalpingTSLA = true;
 input bool EnableRSIScalpingXAUUSD = true;
-input bool EnableRSIScalpingMU = true;
+input bool EnableRSIScalpingMU = false;  // OFF: MU.NAS toxic on real ticks (net loser)
 input bool EnableSuperEMA = true;
 input bool EnableRSIConsolidation = false;
 input bool EnableRSIReversalAsianEURUSD = true;
