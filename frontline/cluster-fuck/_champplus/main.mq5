@@ -1057,6 +1057,22 @@ input double ORCH_ReferenceBalance = 10000.0;
 input double ORCH_MinBalanceScale = 0.1;
 input double ORCH_MaxBalanceScale = 10.0;
 
+// Per-symbol live leverage-aware sizing: scale each symbol's lot by its effective
+// leverage (contract*price / 1-lot margin) vs a reference, so high-leverage symbols
+// don't over-consume margin (blowup guard). Opt-in; default neutral (factor 1.0).
+input group "=== Per-Symbol Leverage-Aware Sizing ==="
+input bool   URF_LeverageAwareEnable = false;
+input double URF_ReferenceLeverage = 1000.0;
+input double URF_MinLeverageScale = 0.25;
+input double URF_MaxLeverageScale = 1.25;
+
+// Equity-vs-balance guard: when equity < balance (net floating loss) shrink new lots
+// by equity/balance; when equity >= balance keep full size (amplification stays with
+// the balance scaler). Opt-in; default neutral.
+input group "=== Equity-vs-Balance Sizing Guard ==="
+input bool   EMG_Enable = false;
+input double EMG_MinFactor = 0.25;
+
 //+------------------------------------------------------------------+
 //| Unified Risk Facade (v4opt Phase 1)                              |
 //| One margin-aware multiplier that REPLACES the blind DD-only      |
@@ -2290,12 +2306,40 @@ double United_ScaledLot(const double baseLot)
    return (lot > 0.0 ? lot : 0.0);
 }
 
+double United_RuntimeLeverageScale(const string symbol)
+{
+   if(!URF_LeverageAwareEnable || URF_ReferenceLeverage <= 0.0 || !SymbolSelect(symbol, true))
+      return 1.0;
+   double price = MathMax(SymbolInfoDouble(symbol, SYMBOL_ASK), SymbolInfoDouble(symbol, SYMBOL_BID));
+   double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   double margin = 0.0;
+   if(price <= 0.0 || contractSize <= 0.0 || !OrderCalcMargin(ORDER_TYPE_BUY, symbol, 1.0, price, margin) || margin <= 0.0)
+      return MathMax(0.0, URF_MinLeverageScale);
+   double effectiveLeverage = (contractSize * price) / margin;
+   double scale = effectiveLeverage / URF_ReferenceLeverage;
+   return MathMax(URF_MinLeverageScale, MathMin(URF_MaxLeverageScale, scale));
+}
+
+double United_EquityGuardScale()
+{
+   if(!EMG_Enable)
+      return 1.0;
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity  = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(balance <= 0.0 || equity >= balance)
+      return 1.0;                       // profit buffer present -> full size
+   double f = equity / balance;         // floating loss -> shrink proportionally
+   return MathMax(EMG_MinFactor, f);
+}
+
 double United_ScaledRiskLot(const double baseLot, const string symbol, const ulong magic)
 {
    double lot = United_ScaledLot(baseLot) 
               * United_LotThrottleFactor(symbol, magic)
               * United_CachedPerfMultiplier(magic)
               * United_PrincipalGuardScale()
+              * United_RuntimeLeverageScale(symbol)
+              * United_EquityGuardScale()
               * g_CachedMarginScale;
    return (lot > 0.0 ? lot : 0.0);
 }
