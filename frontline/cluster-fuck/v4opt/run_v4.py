@@ -15,7 +15,10 @@ Pipeline per window:
 Usage:
   python run_v4.py --tag baseline_full --from 2023.01.01 --to 2026.06.17 \
                    [--ea <main.mq5>] [--base-ini <backtest_config.ini>] \
-                   [--label "..."] [--max-poll 300] [--deposit 3000] [--leverage 1000]
+                                     [--label "..."] [--max-poll 300] [--deposit 3000] [--leverage 1000]
+
+The default model is 1-minute OHLC (Model=1), with Playwright Graph monitoring.
+Use --model 4 for the real-tick promotion pass after a quick result is accepted.
 """
 import argparse
 import datetime as _dt
@@ -67,6 +70,12 @@ def main():
     ap.add_argument("--deposit", default="3000")
     ap.add_argument("--leverage", default="1000")
     ap.add_argument("--symbol", default="EURUSD")
+    ap.add_argument("--model", default="1", choices=["1", "4"],
+                    help="1 = minute OHLC screening; 4 = real-tick promotion pass")
+    ap.add_argument("--monitor-interval", type=int, default=1,
+                    help="capture Graph screenshots every N polls; 0 disables monitoring")
+    ap.add_argument("--monitor-interactive-auth", action="store_true",
+                    help="prompt for noVNC credentials before starting MT5")
     ap.add_argument("--set", action="append", default=[],
                     help="override a [TesterInputs] key: KEY=VALUE (repeatable)")
     args = ap.parse_args()
@@ -85,17 +94,21 @@ def main():
                "--expert", ex5_base, "--report", report,
                "--from", args.from_date, "--to", args.to_date,
                "--deposit", args.deposit, "--leverage", args.leverage,
-               "--symbol", args.symbol]
+               "--symbol", args.symbol, "--model", args.model]
     for kv in args.set:
         ini_cmd += ["--set", kv]
     sh(ini_cmd)
 
     # 2. compile + deploy + run + download + analyze
     label = args.label or f"{args.tag} {args.from_date}->{args.to_date}"
-    sh([sys.executable, RUN_ITER,
+    run_cmd = [sys.executable, RUN_ITER,
         "--ea", args.ea, "--ini", ini_path, "--out", out_dir,
         "--report-name", report, "--label", label,
-        "--max-poll", str(args.max_poll)])
+        "--max-poll", str(args.max_poll),
+        "--monitor-interval", str(args.monitor_interval)]
+    if args.monitor_interactive_auth:
+        run_cmd.append("--monitor-interactive-auth")
+    sh(run_cmd)
 
     # 3. attribution
     try:

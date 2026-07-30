@@ -14,7 +14,7 @@ import argparse
 
 # Keys we are allowed to overwrite (all live in the ASCII [Tester] section).
 TESTER_KEYS = ("Expert", "Report", "FromDate", "ToDate",
-               "Deposit", "Leverage", "Symbol", "Period")
+               "Deposit", "Leverage", "Symbol", "Period", "Model")
 
 
 def main():
@@ -29,6 +29,7 @@ def main():
     ap.add_argument("--leverage")
     ap.add_argument("--symbol")
     ap.add_argument("--period")
+    ap.add_argument("--model")
     ap.add_argument("--set", action="append", default=[],
                     help="override a [TesterInputs] key: KEY=VALUE (repeatable). "
                          "Only the leading value token before the first '||' is "
@@ -56,6 +57,7 @@ def main():
     if args.leverage:  overrides["Leverage"] = args.leverage
     if args.symbol:    overrides["Symbol"] = args.symbol
     if args.period:    overrides["Period"] = args.period
+    if args.model:     overrides["Model"] = args.model
 
     with open(args.base, "r", encoding="latin-1", newline="") as f:
         text = f.read()
