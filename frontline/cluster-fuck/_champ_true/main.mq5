@@ -153,6 +153,8 @@ input string GRM_TrendAlignMagics = "";
 input bool   RQE_Enable = true;
 input string RQE_Magics = "";            // CSV scope; "" = all known V4 magics
 input double RQE_AdverseATRMult = 0.25;  // close when underwater >= this * D1 ATR
+input ENUM_TIMEFRAMES RQE_FastTimeframe = 0;   // 0 = off; e.g. PERIOD_H4 to also cut wrong-on-faster-trend runaways
+input double RQE_FastAdverseATRMult = 1.5;     // adverse (in D1 ATR) needed for a fast-TF counter-trend cut
 input bool   GRM_ConsecutiveLossCooldownEnable = false;
 input int    GRM_ConsecutiveLossCount = 3;
 input int    GRM_ConsecutiveLossLookbackDays = 30;
@@ -903,12 +905,12 @@ bool United_TrendAlignmentBlocksEntry(const string symbol, const ulong magic, co
 //| trend-align entry filter. Returns +1 uptrend, -1 downtrend,      |
 //| 0 range/undetermined. Used by the regime quick-exit guard.       |
 //+------------------------------------------------------------------+
-int United_TrendRegimeDir(const string symbol)
+int United_TrendRegimeDirTF(const string symbol, const ENUM_TIMEFRAMES rtf)
 {
    if(GRM_TrendAlignMAPeriod <= 1 || GRM_TrendAlignSlopeLookback <= 0)
       return 0;
 
-   int maHandle = iMA(symbol, GRM_TrendAlignTimeframe, GRM_TrendAlignMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   int maHandle = iMA(symbol, rtf, GRM_TrendAlignMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
    if(maHandle == INVALID_HANDLE)
       return 0;
 
@@ -919,7 +921,7 @@ int United_TrendRegimeDir(const string symbol)
    if(!ok)
       return 0;
 
-   double close = iClose(symbol, GRM_TrendAlignTimeframe, 1);
+   double close = iClose(symbol, rtf, 1);
    if(close <= 0.0 || ma[0] <= 0.0 || ma[GRM_TrendAlignSlopeLookback] <= 0.0)
       return 0;
 
@@ -929,6 +931,11 @@ int United_TrendRegimeDir(const string symbol)
    if(close < ma[0] && slopePct <= -GRM_TrendAlignMinSlopePct)
       return -1;
    return 0;
+}
+
+int United_TrendRegimeDir(const string symbol)
+{
+   return United_TrendRegimeDirTF(symbol, GRM_TrendAlignTimeframe);
 }
 
 //+------------------------------------------------------------------+
@@ -952,12 +959,16 @@ void United_RegimeQuickExit()
       if(RQE_Magics != "" && !United_MagicIsInCsv(magic, RQE_Magics)) continue;
 
       string symbol = PositionGetString(POSITION_SYMBOL);
-      int dir = United_TrendRegimeDir(symbol);
-      if(dir == 0) continue;  // range / undetermined -> leave alone
-
       bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
-      bool counterTrend = (dir > 0 && !isBuy) || (dir < 0 && isBuy);
-      if(!counterTrend) continue;  // with-trend -> let it run
+      int dir = United_TrendRegimeDir(symbol);   // D1 regime
+      bool counterD1 = (dir > 0 && !isBuy) || (dir < 0 && isBuy);
+      bool counterFast = false;
+      if(RQE_FastTimeframe != 0)
+      {
+         int dirF = United_TrendRegimeDirTF(symbol, RQE_FastTimeframe);
+         counterFast = (dirF > 0 && !isBuy) || (dirF < 0 && isBuy);
+      }
+      if(!counterD1 && !counterFast) continue;  // aligned with regime(s) -> let it run
 
       double openPx = PositionGetDouble(POSITION_PRICE_OPEN);
       double curPx  = isBuy ? SymbolInfoDouble(symbol, SYMBOL_BID)
@@ -974,10 +985,18 @@ void United_RegimeQuickExit()
       IndicatorRelease(atrHandle);
       if(!atrOk || atr[0] <= 0.0) continue;
 
-      if(adverse >= RQE_AdverseATRMult * atr[0])
+      double threshold = 0.0;
+      if(counterD1)
+         threshold = RQE_AdverseATRMult * atr[0];
+      if(counterFast && RQE_FastAdverseATRMult > 0.0)
       {
-         PrintFormat("[REGIME QUICK-EXIT] closing %s ticket %I64u magic=%I64u: counter-trend (regime %d) adverse %.5f >= %.2f*ATR(%.5f)",
-                     symbol, ticket, magic, dir, adverse, RQE_AdverseATRMult, atr[0]);
+         double ft = RQE_FastAdverseATRMult * atr[0];
+         threshold = (threshold > 0.0 ? MathMin(threshold, ft) : ft);
+      }
+      if(threshold > 0.0 && adverse >= threshold)
+      {
+         PrintFormat("[REGIME QUICK-EXIT] closing %s ticket %I64u magic=%I64u: counterD1=%d counterFast=%d adverse %.5f >= thr %.5f ATR %.5f",
+                     symbol, ticket, magic, (int)counterD1, (int)counterFast, adverse, threshold, atr[0]);
          rqeTrade.PositionClose(ticket);
       }
    }
