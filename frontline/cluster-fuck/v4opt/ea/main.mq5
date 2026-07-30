@@ -24,6 +24,7 @@ string s_RS_APPL, s_RS_BTCUSD, s_RS_NVDA, s_RS_TSLA, s_RS_XAUUSD;
 string s_RS_MU;
 string s_RRA_EURUSD, s_RRA_AUDUSD, s_SE_Symbol, s_RCO_Symbol;
 string s_ST_BTC_Symbol, s_ST_XAU_Symbol, s_ST_GER_Symbol, s_RSS_Symbol;
+string s_UJ;   // USDJPY (shared by the 3 USDJPY RSI-scalping sub-strategies)
 
 // Include strategy implementations early so structs are available
 #include "Strategies/DarvasBoxStrategy.mqh"
@@ -58,6 +59,7 @@ double g_Pos_RCO;
 double g_Pos_ST_BTCUSD;
 double g_Pos_ST_XAUUSD;
 double g_Pos_ST_GER40;
+double g_Pos_UJ1, g_Pos_UJ2, g_Pos_UJ3;   // USDJPY sub-strategy lots
 double g_RSS_LotSize;
 double g_WP_LotSize;
 string s_WP_Symbol;
@@ -304,6 +306,7 @@ bool United_IsKnownV4Magic(const ulong magic)
        || magic == 20250420
        || magic == 26042501 || magic == 26042502 || magic == 26042503
        || magic == 789012
+       || magic == 40001 || magic == 40002 || magic == 40003   // USDJPY sub-strategies
        || (magic >= 20260524 && magic <= 20260524 + 15);
 }
 
@@ -1972,6 +1975,53 @@ input bool   RS_XAUUSD_UseTrailingStop = true;
 input double RS_XAUUSD_TrailDistancePoints = 71.0;
 input double RS_XAUUSD_TrailActivationPoints = 41.0;
 
+input group "=== USDJPY — new symbol, 3 RSI-scalping sub-strategies ==="
+input string RS_UJ_Symbol = "USDJPY";                 // shared by all 3 configs
+input ENUM_APPLIED_PRICE RS_UJ_RSI_Applied_Price = PRICE_CLOSE;
+input bool   RS_UJ_UseTrailingStop = true;           // shared trailing enable
+// --- config 1: trend (H1) ---
+input bool   EnableRSIScalpingUSDJPY1 = false;
+input ENUM_TIMEFRAMES RS_UJ1_TimeFrame = PERIOD_H1;
+input int    RS_UJ1_RSI_Period = 14;
+input double RS_UJ1_RSI_Overbought = 70;
+input double RS_UJ1_RSI_Oversold = 30;
+input double RS_UJ1_RSI_Target_Buy = 75;
+input double RS_UJ1_RSI_Target_Sell = 25;
+input int    RS_UJ1_BarsToWait = 4;
+input double RS_UJ1_LotSize = 0.05;
+input int    RS_UJ1_MagicNumber = 40001;
+input int    RS_UJ1_Slippage = 5;
+input double RS_UJ1_TrailDistancePoints = 300.0;
+input double RS_UJ1_TrailActivationPoints = 150.0;
+// --- config 2: reversion (M15) ---
+input bool   EnableRSIScalpingUSDJPY2 = false;
+input ENUM_TIMEFRAMES RS_UJ2_TimeFrame = PERIOD_M15;
+input int    RS_UJ2_RSI_Period = 14;
+input double RS_UJ2_RSI_Overbought = 75;
+input double RS_UJ2_RSI_Oversold = 25;
+input double RS_UJ2_RSI_Target_Buy = 80;
+input double RS_UJ2_RSI_Target_Sell = 20;
+input int    RS_UJ2_BarsToWait = 3;
+input double RS_UJ2_LotSize = 0.05;
+input int    RS_UJ2_MagicNumber = 40002;
+input int    RS_UJ2_Slippage = 5;
+input double RS_UJ2_TrailDistancePoints = 250.0;
+input double RS_UJ2_TrailActivationPoints = 120.0;
+// --- config 3: scalp (M5) ---
+input bool   EnableRSIScalpingUSDJPY3 = false;
+input ENUM_TIMEFRAMES RS_UJ3_TimeFrame = PERIOD_M5;
+input int    RS_UJ3_RSI_Period = 7;
+input double RS_UJ3_RSI_Overbought = 80;
+input double RS_UJ3_RSI_Oversold = 20;
+input double RS_UJ3_RSI_Target_Buy = 85;
+input double RS_UJ3_RSI_Target_Sell = 15;
+input int    RS_UJ3_BarsToWait = 2;
+input double RS_UJ3_LotSize = 0.03;
+input int    RS_UJ3_MagicNumber = 40003;
+input int    RS_UJ3_Slippage = 5;
+input double RS_UJ3_TrailDistancePoints = 200.0;
+input double RS_UJ3_TrailActivationPoints = 100.0;
+
 input group "=== RSI Scalping MU (Micron) - IC Markets .NAS ==="
 // IC Markets NASDAQ stock symbol; tick history present in mt5-dev container.
 input string RS_MU_Symbol = "MU.NAS";
@@ -2977,6 +3027,9 @@ void United_RefreshScaledLots()
    g_Pos_RS_TSLA = United_ScaledRiskLot(LOT_RS_TSLA, s_RS_TSLA, (ulong)RS_TSLA_MagicNumber);
    g_Pos_RS_XAUUSD = United_ScaledRiskLot(LOT_RS_XAUUSD, s_RS_XAUUSD, (ulong)RS_XAUUSD_MagicNumber);
    g_Pos_RS_MU = United_ScaledRiskLot(LOT_RS_MU, s_RS_MU, (ulong)RS_MU_MagicNumber);
+   g_Pos_UJ1 = United_ScaledRiskLot(RS_UJ1_LotSize, s_UJ, (ulong)RS_UJ1_MagicNumber);
+   g_Pos_UJ2 = United_ScaledRiskLot(RS_UJ2_LotSize, s_UJ, (ulong)RS_UJ2_MagicNumber);
+   g_Pos_UJ3 = United_ScaledRiskLot(RS_UJ3_LotSize, s_UJ, (ulong)RS_UJ3_MagicNumber);
    g_Pos_RRA_EURUSD = United_ScaledRiskLot(LOT_RRA_EURUSD, s_RRA_EURUSD, (ulong)RRA_EURUSD_MagicNumber);
    g_Pos_RRA_AUDUSD = United_ScaledRiskLot(LOT_RRA_AUDUSD, s_RRA_AUDUSD, (ulong)RRA_AUDUSD_MagicNumber);
    g_Pos_SE = United_ScaledRiskLot(LOT_SE_SuperEMA, s_SE_Symbol, (ulong)SE_MagicNumber);
@@ -3089,6 +3142,9 @@ RSIScalpingData rsNVDAData;
 RSIScalpingData rsTSLAData;
 RSIScalpingData rsXAUUSDData;
 RSIScalpingData rsMUData;
+RSIScalpingData rsUSDJPY1Data;
+RSIScalpingData rsUSDJPY2Data;
+RSIScalpingData rsUSDJPY3Data;
 SuperEMAData seData;
 RSIConsolidationData rcoData;
 SimpleTrendlineData stBTCData;
@@ -3137,6 +3193,7 @@ int OnInit()
    s_ST_GER_Symbol = SymbolMapper.GetTerminalSymbol(ST_GER_Symbol);
    s_RSS_Symbol    = SymbolMapper.GetTerminalSymbol(RSS_Symbol);
    s_WP_Symbol     = SymbolMapper.GetTerminalSymbol(WP_Symbol);
+   s_UJ            = SymbolMapper.GetTerminalSymbol(RS_UJ_Symbol);
 
    // Handle multi-symbol splitting for Williams Passivation strategy
    string raw_symbols[];
@@ -3704,6 +3761,37 @@ void OnTick()
                                     WP_ExitOnPassivationEnd, sl, tp);
       }
    }
+
+   // --- USDJPY: 3 RSI-scalping sub-strategies on a shared new symbol ---
+   if(EnableRSIScalpingUSDJPY1) // trend (H1)
+      ProcessRSIScalping(rsUSDJPY1Data, s_UJ, RS_UJ1_TimeFrame, RS_UJ1_RSI_Period, RS_UJ_RSI_Applied_Price,
+                        RS_UJ1_RSI_Overbought, RS_UJ1_RSI_Oversold, RS_UJ1_RSI_Target_Buy, RS_UJ1_RSI_Target_Sell,
+                        RS_UJ1_BarsToWait, g_Pos_UJ1, RS_UJ1_MagicNumber,
+                        RS_RequireOrderedBands,
+                        RS_UseClosedBarExit,
+                        (RS_UseReversalEscape && RS_UseReversalEscapeAllSymbols), RS_ReversalATRPeriod, RS_ReversalAdverseAtrMult, RS_ReversalSignsRequired,
+                        RS_ReversalRsiVelocity, RS_ReversalBodyAtrMult,
+                        RS_UJ_UseTrailingStop, RS_UJ1_TrailDistancePoints, RS_UJ1_TrailActivationPoints);
+
+   if(EnableRSIScalpingUSDJPY2) // reversion (M15)
+      ProcessRSIScalping(rsUSDJPY2Data, s_UJ, RS_UJ2_TimeFrame, RS_UJ2_RSI_Period, RS_UJ_RSI_Applied_Price,
+                        RS_UJ2_RSI_Overbought, RS_UJ2_RSI_Oversold, RS_UJ2_RSI_Target_Buy, RS_UJ2_RSI_Target_Sell,
+                        RS_UJ2_BarsToWait, g_Pos_UJ2, RS_UJ2_MagicNumber,
+                        RS_RequireOrderedBands,
+                        RS_UseClosedBarExit,
+                        (RS_UseReversalEscape && RS_UseReversalEscapeAllSymbols), RS_ReversalATRPeriod, RS_ReversalAdverseAtrMult, RS_ReversalSignsRequired,
+                        RS_ReversalRsiVelocity, RS_ReversalBodyAtrMult,
+                        RS_UJ_UseTrailingStop, RS_UJ2_TrailDistancePoints, RS_UJ2_TrailActivationPoints);
+
+   if(EnableRSIScalpingUSDJPY3) // scalp (M5)
+      ProcessRSIScalping(rsUSDJPY3Data, s_UJ, RS_UJ3_TimeFrame, RS_UJ3_RSI_Period, RS_UJ_RSI_Applied_Price,
+                        RS_UJ3_RSI_Overbought, RS_UJ3_RSI_Oversold, RS_UJ3_RSI_Target_Buy, RS_UJ3_RSI_Target_Sell,
+                        RS_UJ3_BarsToWait, g_Pos_UJ3, RS_UJ3_MagicNumber,
+                        RS_RequireOrderedBands,
+                        RS_UseClosedBarExit,
+                        (RS_UseReversalEscape && RS_UseReversalEscapeAllSymbols), RS_ReversalATRPeriod, RS_ReversalAdverseAtrMult, RS_ReversalSignsRequired,
+                        RS_ReversalRsiVelocity, RS_ReversalBodyAtrMult,
+                        RS_UJ_UseTrailingStop, RS_UJ3_TrailDistancePoints, RS_UJ3_TrailActivationPoints);
 
    // Unified trailing stop for strategies without their own trailing logic.
    // Runs after all strategy logic so every open position is re-evaluated each tick.
