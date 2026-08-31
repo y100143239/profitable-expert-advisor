@@ -1,0 +1,5 @@
+# build artifacts + run outputs (keep source + tooling + docs only)
+runs/
+*.ex5
+*.log
+ea/*.log
