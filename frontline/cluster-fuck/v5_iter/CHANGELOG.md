@@ -29,3 +29,35 @@ then combine. Validate every change; only bump version + commit git when an iter
   DECISION: keep breaker ON (default reverted to true). The June lock-out was real but the breaker net-saves
   ~$2,100 and ~32pp DD across 2026. Fix later = smarter/recoverable breaker, not removal. Real DD drivers to
   target next: over-leverage/sizing (52% DD @ 1:1000) + partial TP (lock winners) + dynamic TP/SL.
+- **Iter2 URF_BaseScale 1.5->1.0** (breaker ON) 2026: **+639 / PF 1.07 / BalDD 31.72% / EqDD 35.77% / 673 tr / worst -937 / Sharpe 0.74**.
+  => WIN on every metric vs baseline (+438/52.11%/0.35). Confirms champion is OVER-SIZED (user complaint #2):
+  smaller size = higher return AND -16pp drawdown (big positions caused compounding-killing drawdowns).
+- **Iter3 URF_BaseScale=0.75** (breaker ON) 2026: running (find sizing sweet spot).
+
+## Sizing sweep (URF_BaseScale, breaker ON, full-2026 Model=4) — champion is OVER-LEVERAGED
+| scale | net | EqDD% | PF | Sharpe | worst |
+|---|---|---|---|---|---|
+| 1.5 (champ) | +438 | 52.11 | 1.03 | 0.35 | -1630 |
+| 1.0 | +639 | 35.77 | 1.07 | 0.74 | -937 |
+| 0.75 | +671 | 27.35 | 1.08 | 0.96 | -663 |
+| 0.5 | +700 | 19.88 | 1.09 | 1.12 | -430 |
+| 0.35 | +1037 | 17.87 | 1.12 | 1.41 | -310 |
+| 0.25 | +1243 | 16.09 | 1.16 | 1.79 | -239 |
+| 0.15 | +1179 | 15.17 | 1.18 | 1.81 | -145 |
+- **OPTIMUM = URF_BaseScale 0.25** (max net; 0.15 turns net down). 0.25 = +1243/EqDD16.09/PF1.16/Sharpe1.79
+  vs champion 1.5 = +438/52.11/1.03/0.35. ~2.8x net, DD cut from 52%->16%. Breaker kept ON.
+  Saved as champion_lowsize025.set. PENDING robustness check on 2023-2025 (champion tuned size@1.5 on full window,
+  so 0.25 may earn less in trending years - verify it stays profitable/safe, not catastrophic).
+- Trade count RISES as size falls (634->1148): at large size, drawdowns trip equity throttles (PG/URF gate/
+  ORCH balance-scale) that gate out trades. Smaller size avoids that -> more trades + higher net + lower DD.
+  Likely a throttle-interaction effect; MUST validate the chosen size on 2023-2025 windows (avoid 2026 overfit).
+- Monotonic so far: smaller size => higher net AND lower DD. Confirms user complaint #2 (over-leverage).
+  Sweeping down to find turnover; will lock the optimum as the new sizing base for feature work.
+
+## Sub-strategy attribution (iter2 scale1.0 breakerON 2026) — which strategies FAIL in the choppy regime
+- LOSERS: MU.NAS RSI Scalping (m20004) **-962** (#1, = live culprit); XAUUSD RSI Scalping (m129102315) -286;
+  BTCUSD SimpleTrendline SELL (m26042501) -253 (0% win); RSI Follow/Reverse (m1001/m1002) -385; DE40 ST BUY (m26042502) -92.
+- WINNERS: TSLA scalp (m125421321) +572; Williams buys (m20260526/33/34) +1533; XTI/XBR ST +961; XAUUSD net +229.
+- Sum of losing strategies -2099; total net +732. => target the failing strategies' EXITS/regime, NOT a global freeze.
+- CAUTION (repo memory): blindly disabling strategies is often absorbed by the lot-rebalancer or backfires
+  (FIFO/hedging interactions). Validate every prune/filter with a full-portfolio backtest.
