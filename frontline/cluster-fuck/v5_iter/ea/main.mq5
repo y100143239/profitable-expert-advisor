@@ -82,9 +82,10 @@ input int    GRM_MaxSameSymbolSameSidePositions = 0;
 // 0 = disabled. margin / equity * 100.
 input double GRM_MaxMarginLoadPct = 0.0;
 // v4.11 MASTER SWITCH for the loss-threshold HALT (daily + monthly forced stop / MONTH-LOCK).
-// Default false => breaker OFF: strategies mean-revert, so forced halts miss the recovery (validated harmful).
-// Set true ONLY to reproduce the legacy champion month-lock behavior.
-input bool   GRM_LossHaltEnable = false;
+// KEEP true on 2026-like (choppy) regimes: breaker-OFF full-2026 was FAR worse (-1663/EqDD84.5% vs +438/52.1%);
+// the monthly halt suppresses compounding loss streaks. false only helped on the long 2023-26 trend window.
+// Toggle per regime; leave the crude month-lock replaced by a smarter cooldown in a later iteration.
+input bool   GRM_LossHaltEnable = true;
 // 0 = disabled. Blocks new entries after realized daily profit reaches target.
 input double GRM_DailyProfitTargetUSD = 0.0;
 // 0 = disabled. Blocks new entries after realized daily loss reaches limit.

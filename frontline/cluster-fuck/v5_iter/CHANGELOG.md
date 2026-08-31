@@ -23,4 +23,9 @@ then combine. Validate every change; only bump version + commit git when an iter
 5. Anti-reentry after stop-out at price extreme — low win rate. STATUS: to build (absent in base).
 
 ## Iteration results (append per run)
-_(none yet — baseline pending)_
+- **Baseline** champion 2026 (breaker ON): +438 / PF 1.03 / BalDD 48.62% / EqDD 52.11% / 634 tr / worst -1630.
+- **Iter1 breaker OFF** (GRM_LossHaltEnable=false) 2026: **-1663 / PF 0.94 / EqDD 84.53% / 1432 tr / worst -2431**.
+  => Disabling the breaker is HARMFUL on the 2026 (choppy) regime: 2x trades, loss streaks compound to 84% DD.
+  DECISION: keep breaker ON (default reverted to true). The June lock-out was real but the breaker net-saves
+  ~$2,100 and ~32pp DD across 2026. Fix later = smarter/recoverable breaker, not removal. Real DD drivers to
+  target next: over-leverage/sizing (52% DD @ 1:1000) + partial TP (lock winners) + dynamic TP/SL.
