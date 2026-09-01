@@ -48,6 +48,13 @@ then combine. Validate every change; only bump version + commit git when an iter
   vs champion 1.5 = +438/52.11/1.03/0.35. ~2.8x net, DD cut from 52%->16%. Breaker kept ON.
   Saved as champion_lowsize025.set. PENDING robustness check on 2023-2025 (champion tuned size@1.5 on full window,
   so 0.25 may earn less in trending years - verify it stays profitable/safe, not catastrophic).
+- **Iter9 robustness: 0.25 on 2024** (trending year): +992 / PF 1.33 / BalDD 4.53% / EqDD 8.42% / Sharpe 2.09.
+  => 0.25 is NOT 2026-overfit: excellent on trending 2024 too. Champion@1.5 was over-leveraged in BOTH regimes;
+  the trend masked the risk. LOCKED URF_BaseScale=0.25 as the sizing base. (Full-window run too slow >40min; use per-year.)
+
+## Feature A: Partial Take-Profit (scale-out) — code added v4.11 (opt-in PTP_Enable, default off)
+- United_ManagePartialTP() in OnTick: at favorable move >= PTP_TriggerATRMult*ATR, close PTP_ClosePct% once, SL->BE.
+- Compiles clean (ex5 471,598). Testing on 0.25 base 2026 vs +1243/16.09%.
 - Trade count RISES as size falls (634->1148): at large size, drawdowns trip equity throttles (PG/URF gate/
   ORCH balance-scale) that gate out trades. Smaller size avoids that -> more trades + higher net + lower DD.
   Likely a throttle-interaction effect; MUST validate the chosen size on 2023-2025 windows (avoid 2026 overfit).

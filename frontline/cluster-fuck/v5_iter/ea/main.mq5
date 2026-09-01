@@ -1583,6 +1583,19 @@ input double PM_MaxPositionLossPct  = 2.5;    // close a position if float loss 
 input double PM_MaxPositionLossUSD  = 0.0;    // OR absolute USD cap (0 = use percent only)
 
 //+------------------------------------------------------------------+
+//| v4.11 Partial Take-Profit (scale-out): lock winners before they  |
+//| reverse into losers. When favorable move >= PTP_TriggerATRMult*ATR|
+//| close PTP_ClosePct%% once and (optionally) move SL to breakeven.  |
+//+------------------------------------------------------------------+
+input group "=== v4.11 Partial Take-Profit (scale-out) ==="
+input bool            PTP_Enable          = false; // opt-in: partial close at a profit threshold
+input double          PTP_TriggerATRMult  = 1.2;   // trigger when favorable move >= this * ATR
+input double          PTP_ClosePct        = 50.0;  // close this %% of the position volume (once)
+input bool            PTP_MoveToBreakeven = true;  // after partial close, move SL to entry
+input int             PTP_ATRPeriod       = 14;
+input ENUM_TIMEFRAMES PTP_ATRTF           = PERIOD_H1;
+
+//+------------------------------------------------------------------+
 //| Principal Guard (asymmetric capital protection)                  |
 //| Priority: protect the STARTING principal; tolerate profit DD.    |
 //| Throttles lot size ONLY while equity is at/below the initial     |
@@ -2615,6 +2628,66 @@ void United_RealtimePositionGuard()
 }
 
 //+------------------------------------------------------------------+
+//| v4.11 Partial Take-Profit manager: close part of a winning       |
+//| position once, then move SL to breakeven so the runner is free.   |
+//+------------------------------------------------------------------+
+ulong g_ptpDone[];   // tickets already partially closed (once per position)
+
+bool United_PtpDone(const ulong ticket)
+{
+   for(int i = 0; i < ArraySize(g_ptpDone); i++)
+      if(g_ptpDone[i] == ticket) return true;
+   return false;
+}
+void United_PtpMark(const ulong ticket)
+{
+   int n = ArraySize(g_ptpDone); ArrayResize(g_ptpDone, n + 1); g_ptpDone[n] = ticket;
+}
+double United_AtrBar1(const string sym, const ENUM_TIMEFRAMES tf, const int period)
+{
+   int h = iATR(sym, tf, period);
+   if(h == INVALID_HANDLE) return 0.0;
+   double a[];
+   bool ok = (CopyBuffer(h, 0, 1, 1, a) == 1);
+   IndicatorRelease(h);
+   return ok ? a[0] : 0.0;
+}
+void United_ManagePartialTP()
+{
+   if(!PTP_Enable || PTP_ClosePct <= 0.0 || PTP_TriggerATRMult <= 0.0) return;
+   CTrade ptp;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket)) continue;
+      if(!United_IsKnownV4Magic((ulong)PositionGetInteger(POSITION_MAGIC))) continue;
+      if(United_PtpDone(ticket)) continue;
+      string sym = PositionGetString(POSITION_SYMBOL);
+      double atr = United_AtrBar1(sym, PTP_ATRTF, PTP_ATRPeriod);
+      if(atr <= 0.0) continue;
+      long   ptype = PositionGetInteger(POSITION_TYPE);
+      double entry = PositionGetDouble(POSITION_PRICE_OPEN);
+      double cur   = (ptype == POSITION_TYPE_BUY) ? SymbolInfoDouble(sym, SYMBOL_BID)
+                                                  : SymbolInfoDouble(sym, SYMBOL_ASK);
+      double fav   = (ptype == POSITION_TYPE_BUY) ? (cur - entry) : (entry - cur);
+      if(fav < PTP_TriggerATRMult * atr) continue;
+      double vol  = PositionGetDouble(POSITION_VOLUME);
+      double step = SymbolInfoDouble(sym, SYMBOL_VOLUME_STEP); if(step <= 0.0) step = 0.01;
+      double vmin = SymbolInfoDouble(sym, SYMBOL_VOLUME_MIN);  if(vmin <= 0.0) vmin = step;
+      double closeVol = MathFloor((vol * PTP_ClosePct / 100.0) / step) * step;
+      if(closeVol < vmin) closeVol = vmin;
+      if(vol - closeVol < vmin) { United_PtpMark(ticket); continue; } // too small to split cleanly
+      if(ptp.PositionClosePartial(ticket, closeVol))
+      {
+         United_PtpMark(ticket);
+         if(PTP_MoveToBreakeven) ptp.PositionModify(ticket, entry, PositionGetDouble(POSITION_TP));
+         PrintFormat("[PARTIAL-TP] %s #%I64u closed %.2f/%.2f at +%.2f*ATR; SL->BE",
+                     sym, ticket, closeVol, vol, PTP_TriggerATRMult);
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
 //| Principal Guard scale: asymmetric capital protection. Returns a   |
 //| [PG_MinScale .. 1.0] lot multiplier that throttles size ONLY      |
 //| while equity is at/below the initial principal (no profit buffer  |
@@ -2983,6 +3056,8 @@ int OnInit()
    int initResult = INIT_SUCCEEDED;
 
    PrintFormat("[UnitedEA] BUILD %s | version %s | starting init", EA_VERSION, "4.11");
+
+   ArrayResize(g_ptpDone, 0);   // reset partial-TP tracking each (test) run
 
    // Seed the URF equity high-water mark with the starting equity/balance.
    g_EquityPeak = MathMax(AccountInfoDouble(ACCOUNT_EQUITY), AccountInfoDouble(ACCOUNT_BALANCE));
@@ -3463,6 +3538,9 @@ void OnTick()
 
    // Swap-aware close near rollover (off by default).
    United_SwapAwareClose();
+
+   // v4.11 Partial take-profit: scale out winners + move SL to breakeven (opt-in, default off).
+   United_ManagePartialTP();
    United_RefreshPerformanceCache();
    United_RefreshScaledLots();
 
