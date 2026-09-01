@@ -74,3 +74,8 @@ then combine. Validate every change; only bump version + commit git when an iter
 - Sum of losing strategies -2099; total net +732. => target the failing strategies' EXITS/regime, NOT a global freeze.
 - CAUTION (repo memory): blindly disabling strategies is often absorbed by the lot-rebalancer or backfires
   (FIFO/hedging interactions). Validate every prune/filter with a full-portfolio backtest.
+
+## Feature D: Anti-Reentry (post-stop adverse-price gate) - code added v4.11 (opt-in ARE_Enable, default off)
+United_AntiReentryBlocks in United_MayOpenNewEntry: after a recent losing stop-out on symbol+magic, block a NEW
+same-direction entry if price moved >= ARE_MinAdverseATRMult*ATR further adverse (chasing down/up = low win rate).
+Scalpers route through the gate (RSIScalpingStrategy 442/467). Compiles clean. Testing on 0.25 base 2026.

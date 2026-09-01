@@ -1463,6 +1463,8 @@ bool United_MayOpenNewEntry(const string symbol, const ulong magic, const bool i
       return false;
    if(!United_GlobalRiskAllowsEntry(symbol, magic, isBuy))
       return false;
+   if(United_AntiReentryBlocks(symbol, magic, isBuy))
+      return false;
    return true;
 }
 
@@ -1594,6 +1596,18 @@ input double          PTP_ClosePct        = 33.0;  // close this %% of the posit
 input bool            PTP_MoveToBreakeven = false; // KEEP false: SL->BE stops runners on noise (net halved in test)
 input int             PTP_ATRPeriod       = 14;
 input ENUM_TIMEFRAMES PTP_ATRTF           = PERIOD_H1;
+
+//+------------------------------------------------------------------+
+//| v4.11 Anti-Reentry: after a stop-out (loss) on symbol+magic in a |
+//| direction, block a NEW same-direction entry if price has moved   |
+//| further adverse (chasing a falling/rising market = low win rate).|
+//+------------------------------------------------------------------+
+input group "=== v4.11 Anti-Reentry (post-stop adverse-price gate) ==="
+input bool            ARE_Enable          = false; // opt-in
+input double          ARE_MinAdverseATRMult = 1.0; // block only if new entry >= this*ATR further adverse than last loss
+input int             ARE_LookbackBars    = 24;    // last loss only relevant within this many ARE_ATRTF bars
+input int             ARE_ATRPeriod       = 14;
+input ENUM_TIMEFRAMES ARE_ATRTF           = PERIOD_H1;
 
 //+------------------------------------------------------------------+
 //| Principal Guard (asymmetric capital protection)                  |
@@ -2685,6 +2699,43 @@ void United_ManagePartialTP()
                      sym, ticket, closeVol, vol, PTP_TriggerATRMult);
       }
    }
+}
+
+//+------------------------------------------------------------------+
+//| v4.11 Anti-Reentry gate: block same-direction re-entry after a    |
+//| recent stop-out when the new price is further adverse.            |
+//+------------------------------------------------------------------+
+bool United_AntiReentryBlocks(const string sym, const ulong magic, const bool isBuy)
+{
+   if(!ARE_Enable || ARE_MinAdverseATRMult <= 0.0) return false;
+   datetime lossTime = 0; double lossPrice = 0; bool lossWasBuy = false; bool found = false;
+   int total = HistoryDealsTotal();
+   for(int i = total - 1; i >= 0; i--)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0) continue;
+      if((ulong)HistoryDealGetInteger(deal, DEAL_MAGIC) != magic) continue;
+      if(HistoryDealGetString(deal, DEAL_SYMBOL) != sym) continue;
+      if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal, DEAL_ENTRY) != DEAL_ENTRY_OUT) continue;
+      double pl = HistoryDealGetDouble(deal, DEAL_PROFIT) + HistoryDealGetDouble(deal, DEAL_SWAP)
+                + HistoryDealGetDouble(deal, DEAL_COMMISSION);
+      if(pl >= 0.0) continue;                 // only most-recent LOSS
+      lossTime  = (datetime)HistoryDealGetInteger(deal, DEAL_TIME);
+      lossPrice = HistoryDealGetDouble(deal, DEAL_PRICE);
+      lossWasBuy = ((ENUM_DEAL_TYPE)HistoryDealGetInteger(deal, DEAL_TYPE) == DEAL_TYPE_SELL); // sell-out closed a buy
+      found = true;
+      break;
+   }
+   if(!found) return false;
+   if(isBuy != lossWasBuy) return false;      // only same-direction re-entry
+   int tfSec = PeriodSeconds(ARE_ATRTF); if(tfSec <= 0) tfSec = 3600;
+   if(TimeCurrent() - lossTime > (datetime)(ARE_LookbackBars * tfSec)) return false;
+   double atr = United_AtrBar1(sym, ARE_ATRTF, ARE_ATRPeriod);
+   if(atr <= 0.0) return false;
+   double cur = isBuy ? SymbolInfoDouble(sym, SYMBOL_ASK) : SymbolInfoDouble(sym, SYMBOL_BID);
+   if(isBuy  && cur <= lossPrice - ARE_MinAdverseATRMult * atr) return true;  // buying even lower after a buy stop
+   if(!isBuy && cur >= lossPrice + ARE_MinAdverseATRMult * atr) return true;  // selling even higher after a sell stop
+   return false;
 }
 
 //+------------------------------------------------------------------+
