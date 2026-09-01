@@ -55,6 +55,12 @@ then combine. Validate every change; only bump version + commit git when an iter
 ## Feature A: Partial Take-Profit (scale-out) — code added v4.11 (opt-in PTP_Enable, default off)
 - United_ManagePartialTP() in OnTick: at favorable move >= PTP_TriggerATRMult*ATR, close PTP_ClosePct% once, SL->BE.
 - Compiles clean (ex5 471,598). Testing on 0.25 base 2026 vs +1243/16.09%.
+- **Iter10 PTP(1.2ATR,50%,BE) 2026**: +609 / EqDD 18.93% / PF 1.10 / Sharpe 1.14 => HURT (net halved vs +1243).
+  Win% rose 43.8->47.5 but net down: cutting winners early caps upside + SL->BE stops runners on noise.
+  Consistent with prior lesson (TP/SL placement doesn't help this portfolio). Testing no-BE variant to isolate.
+- **Iter11 PTP(2.0ATR,33%,noBE) 2026**: +1227 / EqDD 14.34% / PF 1.18 / Recovery 2.03 / Sharpe 1.81 => RISK WIN.
+  vs 0.25-only (+1243/16.09/1.53): ~neutral net (-1.3%), DD -1.75pp, recovery 1.53->2.03. BREAKEVEN was the killer
+  (iter10 BE +609 vs iter11 no-BE +1227). LESSON: never SL->BE here. Set PTP defaults = 2.0ATR/33%/noBE, opt-in.
 - Trade count RISES as size falls (634->1148): at large size, drawdowns trip equity throttles (PG/URF gate/
   ORCH balance-scale) that gate out trades. Smaller size avoids that -> more trades + higher net + lower DD.
   Likely a throttle-interaction effect; MUST validate the chosen size on 2023-2025 windows (avoid 2026 overfit).

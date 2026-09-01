@@ -1589,9 +1589,9 @@ input double PM_MaxPositionLossUSD  = 0.0;    // OR absolute USD cap (0 = use pe
 //+------------------------------------------------------------------+
 input group "=== v4.11 Partial Take-Profit (scale-out) ==="
 input bool            PTP_Enable          = false; // opt-in: partial close at a profit threshold
-input double          PTP_TriggerATRMult  = 1.2;   // trigger when favorable move >= this * ATR
-input double          PTP_ClosePct        = 50.0;  // close this %% of the position volume (once)
-input bool            PTP_MoveToBreakeven = true;  // after partial close, move SL to entry
+input double          PTP_TriggerATRMult  = 2.0;   // trigger when favorable move >= this * ATR
+input double          PTP_ClosePct        = 33.0;  // close this %% of the position volume (once)
+input bool            PTP_MoveToBreakeven = false; // KEEP false: SL->BE stops runners on noise (net halved in test)
 input int             PTP_ATRPeriod       = 14;
 input ENUM_TIMEFRAMES PTP_ATRTF           = PERIOD_H1;
 
