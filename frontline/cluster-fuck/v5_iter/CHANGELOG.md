@@ -79,3 +79,20 @@ then combine. Validate every change; only bump version + commit git when an iter
 United_AntiReentryBlocks in United_MayOpenNewEntry: after a recent losing stop-out on symbol+magic, block a NEW
 same-direction entry if price moved >= ARE_MinAdverseATRMult*ATR further adverse (chasing down/up = low win rate).
 Scalpers route through the gate (RSIScalpingStrategy 442/467). Compiles clean. Testing on 0.25 base 2026.
+
+- **Iter12 AntiReentry(1.0ATR) 2026**: +1475 / EqDD 12.08% / PF 1.21 / Sharpe 2.12 / Recovery 2.40 => STRONG WIN.
+  vs 0.25-only (+1243/16.09/1.79): +18.6%% net AND -4pp DD. User insight validated (adverse same-dir re-entry = low win-rate).
+  Tuning threshold (0.5ATR) + will stack with PTP + validate on 2024.
+
+- **AntiReentry threshold sweep (0.25 base 2026)**: 0.5ATR=+1224/16.26; 1.0ATR=+1475/12.08 (BEST); 1.5ATR=+969/15.61.
+  => ARE_MinAdverseATRMult=1.0 optimum (default set). Non-monotonic. Testing combo ARE1.0+PTP + 2024 robustness.
+
+- **Iter15 combo ARE1.0+PTP 2026**: +1198/EqDD12.44/Sharpe1.78 => WORSE than ARE-only (+1475/12.08/2.12).
+  PTP's winner-capping undoes ARE gains. BEST = 0.25 + ARE(1.0), NO PTP: +1475/EqDD12.08/PF1.21/Sharpe2.12/Rec2.40.
+  (champion 1.5 baseline = +438/52.11/0.35). PTP kept opt-in but NOT in recommended config.
+
+- **Iter16 robustness: 0.25+ARE1.0 on 2024**: +1053/EqDD7.88/PF1.39/Sharpe2.34 (vs 0.25-only +992/8.42). ARE improves 2024 too.
+
+## RECOMMENDED = champion_lowsize025_are.set (URF_BaseScale=0.25 + GRM_LossHaltEnable=true + ARE_Enable=true/1.0ATR)
+2026: +1475/EqDD12.08/PF1.21/Sharpe2.12 | 2024: +1053/EqDD7.88/PF1.39/Sharpe2.34. vs champion 1.5: +438/52.11/0.35.
+=> 3.4x net, DD 52->12%, robust on both regimes. Breaker kept ON. PTP available opt-in but not in recommended.
